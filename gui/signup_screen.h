@@ -17,7 +17,6 @@ typedef enum {
 } UIState;
 
 // 각각 id, pw, nickname 배열에 결과 저장.
-
 void signup_screen(char *id, char *pw, char *nickname);
 
 #endif
