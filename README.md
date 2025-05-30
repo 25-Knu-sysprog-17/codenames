@@ -48,7 +48,7 @@ openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out s
 ```
 
 ## 3. 클라이언트 인증서 준비
-서버 폴더에서 생성한 ca.crt 파일을 client/ 폴더에 복사하세요
+서버 폴더에서 생성한 ca.crt 파일을 client/ 폴더에 복사하세요.
 ```bash
 cp server/ca.crt client/
 ```
