@@ -1,10 +1,10 @@
 CC = gcc
-CFLAGS = -Wall -I../gui -I../db -I. -I../server
+CFLAGS = -Wall -I../gui -I../client
 LDFLAGS = -lncurses -lssl -lcrypto
 
-VPATH = ../gui ../db ../server
+VPATH = ../gui
 
-TARGET = app
+TARGET = client
 
 SRCS = client.c login_screen.c signup_screen.c gui_utils.c
 OBJS = $(SRCS:.c=.o)
