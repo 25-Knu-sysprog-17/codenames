@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 
 extern const char *DB_NAME;
+extern sqlite3 *db;
 
 // DB 초기화 함수 (테이블 생성 등)
 int init_db(void);

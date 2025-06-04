@@ -99,9 +99,11 @@ int signup_user(const char *id, const char *pw, const char *nickname) {
     sqlite3 *db;
     if (db_open(&db) != 0) return -1;
 
-    // 중복 재체크
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT id FROM users WHERE id = ? OR nickname = ?;";
+    const char *sql;
+
+    // 중복 검사
+    sql = "SELECT id FROM users WHERE id = ? OR nickname = ?;";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         db_close(db);
         return -1;
@@ -111,7 +113,7 @@ int signup_user(const char *id, const char *pw, const char *nickname) {
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         sqlite3_finalize(stmt);
         db_close(db);
-        return -2; // 중복
+        return -2; // 중복된 아이디 또는 닉네임
     }
     sqlite3_finalize(stmt);
 
@@ -121,9 +123,17 @@ int signup_user(const char *id, const char *pw, const char *nickname) {
     char hashed_pw[HASH_LEN];
     hash_password_with_salt(pw, salt, hashed_pw);
 
-    // 회원가입
+    // 트랜잭션 시작
+    if (sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL) != SQLITE_OK) {
+        fprintf(stderr, "트랜잭션 시작 실패: %s\n", sqlite3_errmsg(db));
+        db_close(db);
+        return -1;
+    }
+
+    // users 테이블에 삽입
     sql = "INSERT INTO users(id, pw, salt, nickname, report_count, is_suspended) VALUES (?, ?, ?, ?, 0, 0);";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
         db_close(db);
         return -1;
     }
@@ -131,15 +141,43 @@ int signup_user(const char *id, const char *pw, const char *nickname) {
     sqlite3_bind_text(stmt, 2, hashed_pw, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, salt, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 4, nickname, -1, SQLITE_STATIC);
+
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
+        sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
         db_close(db);
         return -1;
     }
     sqlite3_finalize(stmt);
+
+    // game_stats 테이블에 삽입
+    sql = "INSERT OR IGNORE INTO game_stats (user_id, wins, losses) VALUES (?, 0, 0);";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
+        db_close(db);
+        return -1;
+    }
+    sqlite3_bind_text(stmt, 1, id, -1, SQLITE_STATIC);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
+        db_close(db);
+        return -1;
+    }
+    sqlite3_finalize(stmt);
+
+    // 트랜잭션 커밋
+    if (sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL) != SQLITE_OK) {
+        fprintf(stderr, "트랜잭션 커밋 실패: %s\n", sqlite3_errmsg(db));
+        db_close(db);
+        return -1;
+    }
+
     db_close(db);
     return 0;
 }
+
 
 // 로그인
 int login_user_db(const char *id, const char *pw) {
@@ -147,7 +185,7 @@ int login_user_db(const char *id, const char *pw) {
     if (db_open(&db) != 0) return -1;
 
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT pw, salt FROM users WHERE id = ?;";
+    const char *sql = "SELECT pw, salt, is_suspended FROM users WHERE id = ?;";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         db_close(db);
         return -1;
@@ -160,6 +198,14 @@ int login_user_db(const char *id, const char *pw) {
     }
     const unsigned char *stored_pw = sqlite3_column_text(stmt, 0);
     const unsigned char *salt = sqlite3_column_text(stmt, 1);
+    int is_suspended = sqlite3_column_int(stmt, 2);
+
+    if (is_suspended) {
+        sqlite3_finalize(stmt);
+        db_close(db);
+        return -4; // 정지된 계정
+    }
+
     char hashed_pw[HASH_LEN];
     hash_password_with_salt(pw, (const char *)salt, hashed_pw);
     int result = strcmp((const char *)stored_pw, hashed_pw) == 0 ? 0 : -3; // 비밀번호 불일치
@@ -173,40 +219,58 @@ int change_password(const char *id, const char *new_pw) {
     sqlite3 *db;
     if (db_open(&db) != 0) return -1;
 
-    // salt 재사용 또는 새로 생성 가능 (여기선 기존 salt 사용)
-    sqlite3_stmt *stmt;
-    const char *sql = "SELECT salt FROM users WHERE id = ?;";
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+    // 트랜잭션 시작
+    char *errmsg = NULL;
+    if (sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, &errmsg) != SQLITE_OK) {
+        sqlite3_free(errmsg);
         db_close(db);
         return -1;
     }
+
+    sqlite3_stmt *stmt = NULL;
+    int result = -1;
+
+    // 1. 기존 salt 조회
+    const char *sql = "SELECT salt FROM users WHERE id = ?;";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) goto rollback;
     sqlite3_bind_text(stmt, 1, id, -1, SQLITE_STATIC);
     if (sqlite3_step(stmt) != SQLITE_ROW) {
-        sqlite3_finalize(stmt);
-        db_close(db);
-        return -2; // 없는 계정
+        result = -2; // 없는 계정
+        goto rollback;
     }
     const unsigned char *salt = sqlite3_column_text(stmt, 0);
     char hashed_pw[HASH_LEN];
     hash_password_with_salt(new_pw, (const char *)salt, hashed_pw);
     sqlite3_finalize(stmt);
 
+    // 2. 비밀번호 변경
     sql = "UPDATE users SET pw = ? WHERE id = ?;";
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        db_close(db);
-        return -1;
-    }
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) goto rollback;
     sqlite3_bind_text(stmt, 1, hashed_pw, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, id, -1, SQLITE_STATIC);
-    if (sqlite3_step(stmt) != SQLITE_DONE) {
-        sqlite3_finalize(stmt);
-        db_close(db);
-        return -1;
-    }
+    if (sqlite3_step(stmt) != SQLITE_DONE) goto rollback;
     sqlite3_finalize(stmt);
+
+    // 트랜잭션 커밋
+    if (sqlite3_exec(db, "COMMIT;", NULL, NULL, &errmsg) != SQLITE_OK) {
+        sqlite3_free(errmsg);
+        goto rollback_final;
+    }
+    result = 0;
+    goto final;
+
+rollback:
+    if (stmt) sqlite3_finalize(stmt);
+    sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
+
+rollback_final:
+    result = (result == -2) ? -2 : -1; // 계정 없음(-2), 기타 오류(-1)
+
+final:
     db_close(db);
-    return 0;
+    return result;
 }
+
 
 // 사용자 삭제
 int withdraw_user(const char *id) {
@@ -235,34 +299,51 @@ int change_nickname(const char *id, const char *new_nickname) {
     sqlite3 *db;
     if (db_open(&db) != 0) return -1;
 
-    // 닉네임 중복 체크
-    sqlite3_stmt *stmt;
-    const char *sql = "SELECT id FROM users WHERE nickname = ?;";
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+    // 트랜잭션 시작
+    char *errmsg = NULL;
+    if (sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, &errmsg) != SQLITE_OK) {
+        sqlite3_free(errmsg);
         db_close(db);
         return -1;
     }
+
+    int result = -1;
+    sqlite3_stmt *stmt = NULL;
+
+    // 1. 닉네임 중복 체크
+    const char *sql = "SELECT id FROM users WHERE nickname = ?;";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) goto rollback;
     sqlite3_bind_text(stmt, 1, new_nickname, -1, SQLITE_STATIC);
     if (sqlite3_step(stmt) == SQLITE_ROW) {
-        sqlite3_finalize(stmt);
-        db_close(db);
-        return -2; // 중복
+        result = -2; // 중복
+        goto rollback;
     }
     sqlite3_finalize(stmt);
 
+    // 2. 닉네임 변경
     sql = "UPDATE users SET nickname = ? WHERE id = ?;";
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        db_close(db);
-        return -1;
-    }
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) goto rollback;
     sqlite3_bind_text(stmt, 1, new_nickname, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, id, -1, SQLITE_STATIC);
-    if (sqlite3_step(stmt) != SQLITE_DONE) {
-        sqlite3_finalize(stmt);
-        db_close(db);
-        return -1;
-    }
+    if (sqlite3_step(stmt) != SQLITE_DONE) goto rollback;
     sqlite3_finalize(stmt);
+
+    // 트랜잭션 커밋
+    if (sqlite3_exec(db, "COMMIT;", NULL, NULL, &errmsg) != SQLITE_OK) {
+        sqlite3_free(errmsg);
+        goto rollback_final;
+    }
+    result = 0;
+    goto final;
+
+rollback:
+    if (stmt) sqlite3_finalize(stmt);
+    sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
+
+rollback_final:
+    result = (result == -2) ? -2 : -1; // 중복(-2), 기타 오류(-1)
+
+final:
     db_close(db);
-    return 0;
+    return result;
 }
