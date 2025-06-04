@@ -27,16 +27,6 @@ UIState current_state = STATE_ID_INPUT;
 
 static bool login_success = false;
 
-const char* art[] = {
-    ":::::::  :::::::  :::::    :::::::      ::   ::    ::     ::: :::  :::::::  :::::::",
-    "+:       +:   :+  +:  :+   +:           +:+  :+   +: :+   +:: :+:  +:       +:     ",
-    "#+       #+   +#  #+   +#  #+#+#+#      #+#+ +#  #+#+#+#  #+ + #+  #+#+#+#  #+#+#+#",
-    "#+       #+   +#  #+  +#   #+           #+ +#+#  #+   +#  #+   #+  #+            +#",
-    "#######  #######  #####    #######      ##   ##  ##   ##  ##   ##  #######  #######"
-};
-
-const int art_lines = 5;
-
 void draw_connection_status(int y, int x) {
     start_color();
     init_pair(10, COLOR_GREEN, COLOR_BLACK); // 성공
@@ -263,11 +253,10 @@ void login_screen(char *id, char* pw) {
     if (server_connection_successful()) {
         // waiting(wait_for_match); // 진행 바 출력
         // system("./codenames");
-        UserInfo user = {
-            .nickname = id_buf,
-            .wins = 7,
-            .losses = 3
-        };
+        UserInfo user;
+        strncpy(user.nickname, id_buf, sizeof(user.nickname));
+        user.wins = 7;
+        user.losses = 3;
         
         lobby_screen(&user);
     } else {

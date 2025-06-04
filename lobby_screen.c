@@ -2,6 +2,7 @@
 #include "gui_util.h"
 #include "connect_to_server.h"
 #include "waiting_screen.h"
+#include "codenames_screen.h"
 #include <ncurses.h>
 #include <locale.h>
 #include <signal.h>
@@ -10,16 +11,6 @@
 #include <stdio.h>
 
 static int current_selection = 0;
-
-const char* art[] = {
-    ":::::::  :::::::  :::::    :::::::      ::   ::    ::     ::: :::  :::::::  :::::::",
-    "+:       +:   :+  +:  :+   +:           +:+  :+   +: :+   +:: :+:  +:       +:     ",
-    "#+       #+   +#  #+   +#  #+#+#+#      #+#+ +#  #+#+#+#  #+ + #+  #+#+#+#  #+#+#+#",
-    "#+       #+   +#  #+  +#   #+           #+ +#+#  #+   +#  #+   #+  #+            +#",
-    "#######  #######  #####    #######      ##   ##  ##   ##  ##   ##  #######  #######"
-};
-const int art_lines = sizeof(art) / sizeof(art[0]);
-
 
 void draw_lobby_ui(const UserInfo* user) {
     int max_y, max_x;

@@ -48,8 +48,6 @@ static int chat_count = 0;
 static FocusState focus = FOCUS_HINT;
 static bool in_input_mode = false;
 
-extern char* get_user_nickname();
-
 void draw_card(int y, int x, const char* word, int team, bool is_revealed) {
     int color_pair;
     if (is_revealed || viewer_mode == 1) {
