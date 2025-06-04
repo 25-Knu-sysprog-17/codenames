@@ -1,5 +1,3 @@
-#include "codenames_screen.h"
-#include "connect_to_server.h"
 #include <ncurses.h>
 #include <locale.h>
 #include <string.h>
@@ -114,31 +112,7 @@ void draw_inputs(int y, int x) {
 }
 
 void* receive_chat_thread(void* arg) {
-    int sock = get_server_socket();
-    while (1) {
-        char buf[256];
-        int bytes = recv(sock, buf, sizeof(buf) - 1, 0);
-        if (bytes <= 0) break;
-
-        buf[bytes] = '\0';
-        if (strncmp(buf, "CHAT|", 5) == 0) {
-            char* name = strtok(buf + 5, "|");
-            char* msg = strtok(NULL, "\n");
-            if (name && msg) {
-                char entry[128];
-                snprintf(entry, sizeof(entry), "%s: %s", name, msg);
-                if (chat_count < CHAT_LOG_SIZE) {
-                    strcpy(chat_log[chat_count++], entry);
-                } else {
-                    for (int i = 1; i < CHAT_LOG_SIZE; i++) {
-                        strcpy(chat_log[i - 1], chat_log[i]);
-                    }
-                    strcpy(chat_log[CHAT_LOG_SIZE - 1], entry);
-                }
-            }
-        }
-    }
-    return NULL;
+    return NULL; // 서버 없음 (테스트용)
 }
 
 void resize_handler(int sig) {
@@ -196,10 +170,13 @@ void codenames_screen() {
             } else if (focus == FOCUS_CHAT) {
                 move(BOARD_SIZE * 4 + 8, board_offset_x + 10);
                 getnstr(chat_input, sizeof(chat_input) - 1);
-                int sock = get_server_socket();
-                char sendbuf[256];
-                snprintf(sendbuf, sizeof(sendbuf), "CHAT|guest|%s", chat_input); // "guest"로 대체
-                send(sock, sendbuf, strlen(sendbuf), 0);
+
+                // 안전하게 chat_input 잘라서 사용
+                char safe_input[120];
+                strncpy(safe_input, chat_input, sizeof(safe_input) - 1);
+                safe_input[sizeof(safe_input) - 1] = '\0';
+
+                snprintf(chat_log[chat_count++ % CHAT_LOG_SIZE], 128, "guest: %s", safe_input);
                 strcpy(chat_input, "");
             }
             noecho();
@@ -217,4 +194,9 @@ void codenames_screen() {
     }
 
     endwin();
+}
+
+int main() {
+    codenames_screen();
+    return 0;
 }
