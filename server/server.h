@@ -4,8 +4,9 @@
 #include <openssl/ssl.h>
 
 // 서버 설정
-#define SERVER_PORT 8085
-#define MAX_CLIENTS 5
+#define SERVER_PORT 55014
+#define TCP_PORT 55015
+#define MAX_CLIENTS 64
 #define BUFFER_SIZE 256
 #define TOKEN_LEN 64
 

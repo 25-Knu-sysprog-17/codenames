@@ -5,7 +5,7 @@ LIBS = -lpthread -lsqlite3 -lssl -lcrypto  # SHA256 등 OpenSSL 사용 시 필�
 
 # 소스 파일
 VPATH = ../db ../server ../src
-SRCS = server.c user_auth.c handler.c session.c
+SRCS = server.c user_auth.c handler.c session.c game_result.c user_info.c
 OBJS = $(SRCS:.c=.o)
 
 # 최종 실행 파일 이름
