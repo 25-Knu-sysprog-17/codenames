@@ -109,7 +109,7 @@ void draw_team_ui(int y, int x, int red, int blue) {
 
 void draw_chat_ui(int y, int x) {
     y++;
-    mvprintw(y, x, "[채팅 로그]");
+    mvprintw(y, x, "-------------------<채팅 로그>-------------------");
     int visible_lines = 10;
     int start = chat_count > visible_lines ? chat_count - visible_lines - chat_scroll_offset : 0;
     for (int i = 0; i < visible_lines; i++) {
@@ -226,6 +226,20 @@ void handle_chat_input(int y, int x, char *name) {
         chat_scroll_offset = 0;
     }
 }
+void append_chat_log(const char* msg) {
+    if (chat_count < CHAT_LOG_SIZE) {
+        strncpy(chat_log[chat_count++], msg, 127);
+        chat_log[chat_count - 1][127] = '\0';  // 안전하게 문자열 종료
+    } else {
+        for (int i = 1; i < CHAT_LOG_SIZE; i++) {
+            strncpy(chat_log[i - 1], chat_log[i], 127);
+        }
+        strncpy(chat_log[CHAT_LOG_SIZE - 1], msg, 127);
+        chat_log[CHAT_LOG_SIZE - 1][127] = '\0';
+    }
+
+    chat_scroll_offset = 0;
+}
 
 
 void readWordsFromFile(char *filename, char wordList[MAX_CARDS][20]) {
@@ -281,7 +295,8 @@ int main() {
     initGame(&game);
 
     int phase = 0;
-
+    append_chat_log("[게임 시작!]");
+    append_chat_log("[레드팀의 턴입니다.]");
     while (1) {
         clear();
         int term_y, term_x;
@@ -376,20 +391,41 @@ int main() {
                     game.cards[i].isUsed = 1; found = 1;
                     int t = game.cards[i].type;
                     if (game.turn == RED_TEAM) {
+
                         if (t == RED_CARD) {
+                            append_chat_log("[정답! 레드팀 득점]");
                             game.redTeamScore++;
                             game.currentTries++;
                         } else {
-                            if (t == BLUE_CARD) game.blueTeamScore++;
-                            game.turn = BLUE_TEAM; phase = 2;
+                            if (t == BLUE_CARD) 
+                            {
+                                append_chat_log("[오답! 블루팀 득점]");
+                                game.blueTeamScore++;
+                            }else{
+                                append_chat_log("[일반카드! 차례가 넘어갑니다.]");
+                                game.turn = BLUE_TEAM; phase = 2;
+                            }
+                            append_chat_log("[블루팀의 턴입니다.]");
+                            
+
                         }
                         if (t == ASSASSIN_CARD) game.gameOver = 1;
                     } else {
+
                         if (t == BLUE_CARD) {
+                            append_chat_log("[정답! 블루팀 득점]");
                             game.blueTeamScore++;
                             game.currentTries++;
                         } else {
-                            game.turn = RED_TEAM; phase = 0;
+                            if (t == RED_CARD) 
+                            {
+                                append_chat_log("[오답! 레드팀 득점]");
+                                game.redTeamScore++;
+                            }else{
+                                append_chat_log("[일반카드! 차례가 넘어갑니다.]");
+                                game.turn = RED_TEAM; phase = 0;
+                            }
+                            append_chat_log("[레드팀의 턴입니다.]");
                         }
                         if (t == ASSASSIN_CARD) game.gameOver = 1;
                     }
