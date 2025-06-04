@@ -10,6 +10,6 @@ typedef enum {
 } Result;
 
 // 결과 화면 출력 함수
-void result_function(int red_score, int blue_score, Result result);
+SceneState result_function(int red_score, int blue_score, Result result);
 
 #endif

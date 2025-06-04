@@ -1,38 +1,53 @@
+#include "client.h"
+#include "gui_utils.h"
 #include <ncurses.h>
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 typedef enum {
     RESULT_WIN,
     RESULT_LOSE,
 } Result;
 
+static SceneState scene_state = SCENE_RESULT;
 
-// 테두리 그리기
-void draw_border() {
-    int max_y, max_x;
-    getmaxyx(stdscr, max_y, max_x);
+SceneState send_game_result(int sock, const char *token, Result result) {
+    char buffer[256];
+    if (result == RESULT_WIN) {
+        snprintf(buffer, sizeof(buffer), "RESULT|%s|WIN", token);
+    } else if (result == RESULT_LOSE) {
+        snprintf(buffer, sizeof(buffer), "RESULT|%s|LOSS", token);
+    } else {
+        return SCENE_ERROR; // 잘못된 결과
+    }
 
-    // 상단, 하단 테두리
-    for (int i = 0; i < max_x; i++) {
-        mvaddch(0, i, '-');
-        mvaddch(max_y-1, i, '-');
-    }
-    // 좌측, 우측 테두리
-    for (int i = 1; i < max_y-1; i++) {
-        mvaddch(i, 0, '|');
-        mvaddch(i, max_x-1, '|');
-    }
-    // 네 귀퉁이
-    mvaddch(0, 0, '+');
-    mvaddch(0, max_x-1, '+');
-    mvaddch(max_y-1, 0, '+');
-    mvaddch(max_y-1, max_x-1, '+');
+    send(sock, buffer, strlen(buffer), 0);
 
-    // 승패 유무 & 결과 값 사이 선
-    int y = max_y / 4;
-    for (int i = 1; i < max_x -1; i++) {
-        mvaddch(y, i, '-');
+    ssize_t received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+    if (received <= 0) {
+        perror("recv failed or connection closed");
+        return SCENE_ERROR;
     }
+    buffer[received] = '\0';  // 널 종료자 추가
+
+    // 유효하지 않은 토큰인 경우
+    if (strcmp(buffer, "INVALID_TOKEN") == 0) {
+    // fprintf(stderr, "유효하지 않은 토큰입니다.\n");
+        close(game_sock);
+        return SCENE_INVALID_TOKEN;
+    }
+    // 에러
+    if (strcmp(buffer, "ERROR") == 0) {
+        close(game_sock);
+        return SCENE_ERROR;
+    }
+
+    // 받은 메시지 출력
+    printf("Response from server: %s\n", buffer);
+    return SCENE_RESULT;
 }
 
 // 결과 그리기
@@ -76,7 +91,8 @@ void draw_result(int red_score, int blue_score, Result result) {
 }
 
 // 결과 전체
-void result_function(int red_score, int blue_score, Result result) {
+SceneState result_function(int red_score, int blue_score, Result result) {
+
     initscr();
     cbreak();
     noecho();
@@ -92,6 +108,8 @@ void result_function(int red_score, int blue_score, Result result) {
         clear();
         draw_border();
         draw_result(red_score, blue_score, result);
+        // if(scene_state == SCENE_ERROR || scene_state == SCENE_RESULT || scene_state == SCENE_EXIT )
+           // return scene_state;
         refresh();
 
         int ch = getch();
@@ -99,9 +117,12 @@ void result_function(int red_score, int blue_score, Result result) {
     }
 
     endwin();
+    scene_state = send_game_result(game_sock, token, result);
+    return scene_state;
 }
 
-int main() {
+
+/*int main() {
 
     int red_score = 3;
     int blue_score = 9;
@@ -109,4 +130,4 @@ int main() {
     result_function(red_score, blue_score, result);
     
     return 0;
-}
+}*/

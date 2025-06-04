@@ -1,6 +1,6 @@
+#include "client.h"
 #include "signup_screen.h"
 #include "gui_utils.h"
-#include "client.h"
 #include <ncurses.h>
 #include <string.h>
 #include <signal.h>
@@ -48,6 +48,7 @@ static int nickname_valid_request = 0;
 static int signup_requested = 0;
 static int show_message = 0;
 static SignupResult signup_result = SIGNUP_NONE;
+static SceneState scene_state = SCENE_SIGNUP;
 
 // 각각의 좌표 위치 업데이트
 static void update_positions() {
@@ -307,7 +308,7 @@ SignupResult send_signup_request(const char *id, const char *pw, const char *nic
 }
 
 // 입력 처리
-static void handle_input(int ch) {
+static SceneState handle_input(int ch) {
     SignupUIState prev_state = current_state;
     switch (ch) {
         case KEY_UP:
@@ -365,11 +366,10 @@ static void handle_input(int ch) {
                 }
                 else if (id_available == AVAILABLE && nickname_available == AVAILABLE && password_valid == 1) { // 회원가입 시도
                     signup_result = send_signup_request(id_buf, pw_buf, nickname_buf);
-                    draw_signup_screen(); /*{
-                        if (result == SIGNUP_SUCCESS) {
-                            // 메인 화면으로 이동하는 로직
-                        }
-                    }*/
+                    draw_signup_screen();
+                    if (signup_result == SIGNUP_SUCCESS) {
+                        return SCENE_MAIN;    // 메인 화면으로 이동하는 로직
+                    }
                 }
             }
             break;
@@ -430,6 +430,7 @@ static void handle_input(int ch) {
     }
     update_cursor();
     update_echo_mode();
+    return SCENE_SIGNUP;
 }
 
 // 터미널 사이즈 바꼈을 때
@@ -446,12 +447,15 @@ static void sigwinch_handler(int signo) {
 }
 
 // 로그인 전체
-void signup_screen(char *id, char* pw, char* nickname) {
+SceneState signup_screen(char *id, char* pw, char* nickname) {
     initscr();
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
     curs_set(1);
+
+    clear(); // 화면 한 번 지우기
+    refresh(); // 화면 갱신
 
     signal(SIGWINCH, sigwinch_handler);
 
@@ -463,12 +467,16 @@ void signup_screen(char *id, char* pw, char* nickname) {
     while (1) {
         int ch = getch();
         if (ch == 'q') break;
-        handle_input(ch);
+        scene_state = handle_input(ch);
+        if(scene_state != SCENE_SIGNUP)
+            break;
     }
     endwin();
 
     strncpy(id, id_buf, MAX_INPUT);
     strncpy(pw, pw_buf, MAX_INPUT);
     strncpy(nickname, nickname_buf, MAX_INPUT);
+
+    return scene_state;
 }
 

@@ -7,6 +7,6 @@
 
 #define SIGN_MAX_INPUT 32
 
-void signup_screen(char *id, char *pw, char *nickname);
+SceneState signup_screen(char *id, char* pw, char* nickname);
 
 #endif

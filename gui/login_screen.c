@@ -1,7 +1,7 @@
+#include "client.h"
 #include "login_screen.h"
 #include "signup_screen.h"
 #include "gui_utils.h"
-#include "client.h"
 #include <ncurses.h>
 #include <string.h>
 #include <signal.h>
@@ -22,8 +22,8 @@ typedef enum {
     LOGIN_ERROR = 1,        // 일반 오류 (DB, 네트워크 등)
     LOGIN_NO_ACCOUNT = 2,   // 계정 없음
     LOGIN_WRONG_PW = 3,     // 비밀번호 불일치
+    LOGIN_SUSPENDED = 4     // 정지된 계정
 } LoginResult;
-
 
 static char id_buf[USER_MAX_INPUT] = {0};
 static char pw_buf[USER_MAX_INPUT] = {0};
@@ -35,6 +35,7 @@ static int login_requested = 0;
 static int show_message = 0;
 static int id_valid = 0;
 static int password_valid = 0;
+static SceneState scene_state = SCENE_LOGIN;
 
 // id_x, id_y, pw_y, pw_x 위치 구하기
 static void update_positions() {
@@ -136,6 +137,13 @@ static void draw_login_screen() {
         attroff(COLOR_PAIR(1));
         mvprintw(input_start_y+1, logo_start_x+18+5, "%-*s", USER_MAX_INPUT, "");
         mvprintw(input_start_y + 4, logo_start_x+18+strlen("PW : "), "%-*s", USER_MAX_INPUT, "");
+    } else if (login_result == LOGIN_SUSPENDED) { // 정지된 계정
+        mvprintw(input_start_y + 6, logo_start_x+18 + 5, "%*s", 30, ""); // 이전 메시지 지우기
+        attron(COLOR_PAIR(1)); // 빨간색
+        mvprintw(input_start_y + 6, logo_start_x+18 + 5, "Account has been suspended");
+        attroff(COLOR_PAIR(1));
+        mvprintw(input_start_y+1, logo_start_x+18+5, "%-*s", USER_MAX_INPUT, "");
+        mvprintw(input_start_y + 4, logo_start_x+18+strlen("PW : "), "%-*s", USER_MAX_INPUT, "");
     }
 
     // Login 버튼
@@ -177,6 +185,8 @@ LoginResult login_user(const char *id, const char *pw, char *token_buf, int toke
         return LOGIN_NO_ACCOUNT;
     } else if (strcmp(response, "LOGIN_WRONG_PW") == 0) {
         return LOGIN_WRONG_PW;
+    } else if (strcmp(response, "LOGIN_SUSPENDED") == 0) { // 정지된 계정
+        return LOGIN_SUSPENDED;
     } else {
         return LOGIN_ERROR;
     }
@@ -184,7 +194,7 @@ LoginResult login_user(const char *id, const char *pw, char *token_buf, int toke
 
 
 // 입력 처리
-static void handle_input(int ch) {
+static SceneState handle_input(int ch) {
     LoginUIState prev_state = current_state;
     switch (ch) {
         case KEY_UP:
@@ -225,18 +235,12 @@ static void handle_input(int ch) {
                     login_result = login_user(id_buf, pw_buf, token, TOKEN_LEN);
                     show_message = 0;
                     draw_login_screen();
-                    /*if (login_result == LOGIN_SUCCESS) {
-                                // 메인 화면으로 이동하는 로직
-                            }
-                    */
+                    if (login_result == LOGIN_SUCCESS) {
+                        return SCENE_MAIN;
+                    }
                 }
             } else if (current_state == LOGIN_STATE_SIGNUP_BUTTON) { // 회원가입 페이지로 이동
-                char id[MAX_INPUT] = {0};
-                char pw[MAX_INPUT] = {0};
-                char nickname[MAX_INPUT] = {0};
-                clear();
-                refresh();
-                signup_screen(id, pw, nickname);
+                return SCENE_SIGNUP;
             }
             break;
         case 127: // 백스페이스 눌렀을 때
@@ -284,6 +288,7 @@ static void handle_input(int ch) {
     }
     update_cursor();
     update_echo_mode();
+    return SCENE_LOGIN;
 }
 
 // 터미널 창 크기 바꼈을 때
@@ -300,7 +305,7 @@ static void sigwinch_handler(int signo) {
 }
 
 // 로그인 전체
-void login_screen(char *id, char* pw) {
+SceneState login_screen(char *id, char* pw) {
     initscr();
     cbreak();
     noecho();
@@ -317,10 +322,14 @@ void login_screen(char *id, char* pw) {
     while (1) {
         int ch = getch();
         if (ch == 'q') break;
-        handle_input(ch);
+        scene_state = handle_input(ch);
+        if(scene_state != SCENE_LOGIN)
+            break;
     }
     endwin();
 
     strncpy(id, id_buf, MAX_INPUT);
     strncpy(pw, pw_buf, MAX_INPUT);
+
+    return scene_state;
 }
