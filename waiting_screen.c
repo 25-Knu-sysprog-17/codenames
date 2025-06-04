@@ -1,30 +1,33 @@
+#include "waiting_screen.h"
 #include "gui_util.h"
 #include <ncurses.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdbool.h>
 
-// 전역 상태
 static int progress = 0;
 static char current_msg[256] = "Loading...";
 static const int bar_length = 30;
 
+// 현재 진행률 메시지 설정
 void set_waiting_message(const char* new_msg) {
     strncpy(current_msg, new_msg, sizeof(current_msg) - 1);
     current_msg[sizeof(current_msg) - 1] = '\0';
 }
 
-// 전역 함수 포인터 콜백
+// 내부 콜백 보관
 static bool (*progress_task)(int* progress_out) = NULL;
 
-// 화면 출력
-void draw_screen() {
+// 로딩 화면 출력
+static void draw_screen() {
     clear();
 
-     mvprintw(LINES / 2 - 2, (COLS - strlen(current_msg)) / 2, "%s", current_msg);
+    int y_center = LINES / 2;
+    int x_center = COLS / 2;
 
-    int bar_start = (COLS - (bar_length + 2)) / 2;
-    mvprintw(LINES / 2, bar_start, "[");
+    mvprintw(y_center - 2, x_center - strlen(current_msg) / 2, "%s", current_msg);
+
+    int bar_start = x_center - (bar_length / 2 + 1);
+    mvprintw(y_center, bar_start, "[");
 
     int filled = (progress * bar_length) / 100;
     for (int i = 0; i < bar_length; ++i) {
@@ -32,35 +35,47 @@ void draw_screen() {
     }
     printw("]");
 
-    const char* cancel = "Press Q to cancel";
-    mvprintw(LINES / 2 + 2, (COLS - strlen(cancel)) / 2, "%s", cancel);
+    const char* cancel_msg = "Press Q to cancel";
+    mvprintw(y_center + 2, x_center - strlen(cancel_msg) / 2, "%s", cancel_msg);
 
     draw_border();
     refresh();
 }
 
-// 메인 waiting 실행 함수
-void waiting(bool (*task_callback)(int* progress_out)) {
+// 대기 화면 실행 (콜백 기반)
+WaitingResult waiting(bool (*task_callback)(int* progress_out)) {
     progress = 0;
     progress_task = task_callback;
 
-    initscr(); noecho(); curs_set(FALSE);
-    nodelay(stdscr, TRUE); keypad(stdscr, TRUE);
+    initscr(); 
+    noecho(); 
+    curs_set(FALSE);
+    nodelay(stdscr, TRUE);
+    keypad(stdscr, TRUE);
+
+    WaitingResult result = WAIT_SUCCESS;
 
     while (1) {
         draw_screen();
 
         int ch = getch();
-        if (ch == 'q' || ch == 'Q') break;
+        if (ch == 'q' || ch == 'Q') {
+            result = WAIT_CANCELED;
+            break;
+        }
 
         if (progress_task) {
             bool done = progress_task(&progress);
-            if (done || progress >= 100) break;
+            if (done || progress >= 100) {
+                result = WAIT_SUCCESS;
+                break;
+            }
         }
 
-        usleep(500000);
+        usleep(500000);  // 0.5초 간격
     }
 
     endwin();
     progress = 0;
+    return result;
 }

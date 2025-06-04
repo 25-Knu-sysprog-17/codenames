@@ -7,5 +7,6 @@
 int connect_to_server(const char* ip, int port);
 bool server_connection_successful();
 int get_server_socket();
+bool wait_for_match(int* progress_out);
 
 #endif

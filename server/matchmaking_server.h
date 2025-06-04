@@ -11,7 +11,7 @@ typedef struct {
     struct sockaddr_in addr;
 } ClientInfo;
 
-typedef struct {
+typedef struct { 
     int player_sock[MAX_PLAYERS];
     char player_ip[MAX_PLAYERS][INET_ADDRSTRLEN];
     int player_port[MAX_PLAYERS];

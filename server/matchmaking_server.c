@@ -1,3 +1,4 @@
+
 #include "matchmaking_server.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +16,7 @@ void* handle_client_thread(void* arg) {
     ClientInfo* client = get_client_by_index(index);
     int sock = client->sock;
 
-    char buffer[128];
+    char buffer[256];
     while (1) {
         int bytes = recv(sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes <= 0) {
@@ -26,12 +27,21 @@ void* handle_client_thread(void* arg) {
 
         buffer[bytes] = '\0';
 
-        if (strcmp(buffer, "QUERY_WAIT") == 0) {
-            int count = get_matching_queue_count();
-            char reply[32];
-            snprintf(reply, sizeof(reply), "%d", count);
-            send(sock, reply, strlen(reply), 0);
+        // 매칭 전 요청만 처리
+        char* type = strtok(buffer, "|");
+        if (!type) continue;
+
+        if (strcmp(type, "CMD") == 0) {
+            char* cmd = strtok(NULL, "\n");
+            if (cmd && strcmp(cmd, "QUERY_WAIT") == 0) {
+                int count = get_matching_queue_count();
+                char reply[32];
+                snprintf(reply, sizeof(reply), "WAIT_REPLY|%d", count);
+                send(sock, reply, strlen(reply), 0);
+            }
         }
+
+        // CHAT 등은 이후 room_manager에서 처리하므로 여기선 무시
     }
 
     return NULL;

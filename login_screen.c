@@ -2,6 +2,7 @@
 #include "gui_util.h"
 #include "login_screen.h"
 #include "waiting_screen.h"
+#include "lobby_screen.h"
 #include <ncurses.h>
 #include <string.h>
 #include <signal.h>
@@ -50,35 +51,6 @@ void draw_connection_status(int y, int x) {
         mvprintw(y, x, "[서버 연결 실패]");
         attroff(COLOR_PAIR(11));
     }
-}
-
-// 콜백 함수
-bool wait_for_match(int* progress_out) {
-    static int last_count = 0;
-    set_waiting_message("매칭 대기 중...");
-
-    int sock = get_server_socket();  // 연결된 소켓 사용
-    if (sock <= 0) return true;      // 소켓 없으면 종료
-
-    const char* cmd = "QUERY_WAIT";
-    send(sock, cmd, strlen(cmd), 0);
-
-    char buf[32] = {0};
-    int bytes = recv(sock, buf, sizeof(buf)-1, 0);
-    if (bytes <= 0) {
-        set_waiting_message("서버 응답 없음");
-        *progress_out = 100;
-        return true;
-    }
-
-    int count = atoi(buf);
-    *progress_out = count * 100 / 6;  // 예: 6명 기준
-
-    if (count >= 6) {
-        set_waiting_message("매칭 완료! 게임 시작...");
-        return true;
-    }
-    return false;
 }
 
 // id_x, id_y, pw_y, pw_x 위치 구하기
@@ -289,8 +261,15 @@ void login_screen(char *id, char* pw) {
 
     // 연결 성공했으면 대기화면 후 게임 실행
     if (server_connection_successful()) {
-        waiting(wait_for_match); // 진행 바 출력
-        system("./codenames");
+        // waiting(wait_for_match); // 진행 바 출력
+        // system("./codenames");
+        UserInfo user = {
+            .nickname = id_buf,
+            .wins = 7,
+            .losses = 3
+        };
+        
+        lobby_screen(&user);
     } else {
         printf("❌ 서버 연결 실패 (게임 실행 중단)\n");
     }

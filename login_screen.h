@@ -8,6 +8,5 @@
 
 // 로그인 화면을 실행하고 입력된 ID/PW를 받아오는 함수
 void login_screen(char *id, char *pw);
-bool wait_for_match(int* progress_out);
 
 #endif
