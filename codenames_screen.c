@@ -1,4 +1,3 @@
-
 #include "codenames_screen.h"
 #include "connect_to_server.h"
 #include <ncurses.h>
@@ -198,9 +197,8 @@ void codenames_screen() {
                 move(BOARD_SIZE * 4 + 8, board_offset_x + 10);
                 getnstr(chat_input, sizeof(chat_input) - 1);
                 int sock = get_server_socket();
-                char* name = get_user_nickname();
                 char sendbuf[256];
-                snprintf(sendbuf, sizeof(sendbuf), "CHAT|%s|%s", name, chat_input);
+                snprintf(sendbuf, sizeof(sendbuf), "CHAT|guest|%s", chat_input); // "guest"로 대체
                 send(sock, sendbuf, strlen(sendbuf), 0);
                 strcpy(chat_input, "");
             }
