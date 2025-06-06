@@ -123,14 +123,7 @@ static void draw_login_screen() {
     }
 
     // 로그인 결과 문구 출력
-    if (login_result == 0) { // 로그인 성공
-        mvprintw(input_start_y + 6, logo_start_x+18 + 5, "%*s", 30, ""); // 이전 메시지 지우기
-        attron(COLOR_PAIR(2)); // 초록색
-        mvprintw(input_start_y + 6, (max_x - strlen("Login Successful")) / 2, "Login Successful");
-        attroff(COLOR_PAIR(2));
-        mvprintw(input_start_y+1, logo_start_x+18+5, "%-*s", USER_MAX_INPUT, "");
-        mvprintw(input_start_y + 4, logo_start_x+18+strlen("PW : "), "%-*s", USER_MAX_INPUT, "");
-    } else if (login_result == LOGIN_ERROR || login_result == LOGIN_NO_ACCOUNT || login_result == LOGIN_WRONG_PW) { // 로그인 실패
+    if (login_result == LOGIN_ERROR || login_result == LOGIN_NO_ACCOUNT || login_result == LOGIN_WRONG_PW) { // 로그인 실패
         mvprintw(input_start_y + 6, logo_start_x+18 + 5, "%*s", 30, ""); // 이전 메시지 지우기
         attron(COLOR_PAIR(1)); // 빨간색
         mvprintw(input_start_y + 6, logo_start_x+18 + 5, "Invalid username or password");
@@ -306,11 +299,16 @@ static void sigwinch_handler(int signo) {
 
 // 로그인 전체
 SceneState login_screen(char *id, char* pw) {
+    memset(id_buf, 0, sizeof(id_buf));
+    memset(pw_buf, 0, sizeof(pw_buf));
+    current_state = LOGIN_STATE_ID_INPUT;
+
     initscr();
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
     curs_set(1);
+    erase();
 
     signal(SIGWINCH, sigwinch_handler);
 
@@ -326,7 +324,7 @@ SceneState login_screen(char *id, char* pw) {
         if(scene_state != SCENE_LOGIN)
             break;
     }
-    endwin();
+    // endwin();
 
     strncpy(id, id_buf, MAX_INPUT);
     strncpy(pw, pw_buf, MAX_INPUT);

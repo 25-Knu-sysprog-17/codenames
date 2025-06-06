@@ -204,12 +204,12 @@ static void draw_signup_screen() {
     }
 
     // 회원 가입 결과 문구 출력
-    if (signup_result == SIGNUP_SUCCESS) {
+    /*if (signup_result == SIGNUP_SUCCESS) {
         mvprintw(input_start_y + 12, (max_x - strlen("Registration complete!"))/2, "%*s", 30, ""); // 이전 메시지 지우기
         attron(COLOR_PAIR(2)); // 초록색
         mvprintw(input_start_y + 12, (max_x - strlen("Registration complete!"))/2, "Registration complete!");
         attroff(COLOR_PAIR(2));
-    } else if (signup_result == SIGNUP_ERROR) {
+    } else*/ if (signup_result == SIGNUP_ERROR) {
         mvprintw(input_start_y + 12, (max_x - strlen("Signup failed."))/2, "%*s", 30, ""); // 이전 메시지 지우기
         attron(COLOR_PAIR(1)); // 빨간색
         mvprintw(input_start_y + 12, (max_x - strlen("Signup failed."))/2, "Signup failed.");
@@ -437,7 +437,7 @@ static SceneState handle_input(int ch) {
 static void sigwinch_handler(int signo) {
     endwin();
     refresh();
-    clear();
+    erase();
     resize_term(0, 0);
     draw_border();
     draw_signup_screen();
@@ -454,7 +454,7 @@ SceneState signup_screen(char *id, char* pw, char* nickname) {
     keypad(stdscr, TRUE);
     curs_set(1);
 
-    clear(); // 화면 한 번 지우기
+    erase(); // 화면 한 번 지우기
     refresh(); // 화면 갱신
 
     signal(SIGWINCH, sigwinch_handler);

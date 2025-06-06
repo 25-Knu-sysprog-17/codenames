@@ -8,6 +8,7 @@ void show_invalid_token_screen() {
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
+    erase();
 
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
@@ -45,8 +46,8 @@ void show_invalid_token_screen() {
 
     endwin();
 }
-
+/*
 int main() {
     show_invalid_token_screen();
     return 0;
-}
+}*/
