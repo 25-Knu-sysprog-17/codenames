@@ -1,6 +1,6 @@
 #include "client.h"
 #include "login_screen.h"
-#include "main_screen.h"
+#include "lobby_screen.h"
 #include "signup_screen.h"
 #include "result_screen.h"
 #include "gui_invalid_token.h"
@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <locale.h>
 
 #define SERVER_IP "127.0.0.1"
 #define SSL_PORT 55014
@@ -22,7 +23,8 @@ char token[TOKEN_LEN] = {0};
 int game_sock = -1;
 
 int main() {
-    // SSL 소켓으로 로그인/회원가입
+    setlocale(LC_ALL, "");
+    // SSL 소켓으로 로그인/회원가입/닉네임 수정
     struct sockaddr_in server_addr = {
         .sin_family = AF_INET,
         .sin_port = htons(SSL_PORT),
@@ -67,6 +69,7 @@ int main() {
     }
 
     SceneState current_scene = SCENE_LOGIN;
+
     char id[CLIENT_MAX_INPUT] = {0};
     char pw[CLIENT_MAX_INPUT] = {0};
     char nickname[CLIENT_MAX_INPUT] = {0};
@@ -81,11 +84,6 @@ int main() {
             }
         }
 
-        // 로그인/회원가입 후 SSL 소켓 닫기
-        SSL_free(ssl);
-        close(sock);
-        SSL_CTX_free(ctx);
-
         // TCP 소켓으로 게임 서버(메인 화면)에 접속
         struct sockaddr_in game_addr = {
             .sin_family = AF_INET,
@@ -98,7 +96,6 @@ int main() {
             return 1;
         }
 
-
         if (connect(game_sock, (struct sockaddr*)&game_addr, sizeof(game_addr)) == -1) {
             perror("connect");
             close(game_sock);
@@ -107,15 +104,34 @@ int main() {
 
         // 메인 화면(게임) 진입
         if(current_scene == SCENE_MAIN)
-            current_scene = main_screen_ui();
-        if(current_scene == SCENE_INVALID_TOKEN)
+            current_scene = lobby_screen();
+        if(current_scene == SCENE_INVALID_TOKEN) {
             show_invalid_token_screen();
+            current_scene = login_screen(id, pw);
+        }
         if(current_scene == SCENE_ERROR) {
             printf("error\n");
             break;
         }
         if(current_scene == SCENE_EXIT)
             break;
+
+        int red_score = 3;
+        int blue_score = 9;
+        Result result = RESULT_WIN;
+        
+        current_scene = result_function(red_score, blue_score, result);
+        if(current_scene == SCENE_INVALID_TOKEN) {
+            // 경고창 출력 -> 로그인 화면으로 */
+            show_invalid_token_screen();
+            current_scene = login_screen(id, pw);
+
+        }
+        if(current_scene == SCENE_ERROR) {
+            printf("error\n");
+            // break;
+        }
+        
     }
 
     // (임시) 게임 결과 화면 호출
@@ -134,6 +150,10 @@ int main() {
         // break;
     }
 
+    // 로그인/회원가입 후 SSL 소켓 닫기
+    SSL_free(ssl);
+    close(sock);
+    SSL_CTX_free(ctx);
     close(game_sock);
     return 0;
 }
