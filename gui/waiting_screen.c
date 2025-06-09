@@ -1,93 +1,108 @@
+#include "waiting_screen.h"
+#include "gui_utils.h"
 #include <ncurses.h>
 #include <unistd.h>
 #include <string.h>
 
-#define TOTAL_PLAYERS 20
+static bool cancel_enabled = true;
+static char current_msg[256] = "Loading...";
+static const int bar_length = 30;
 
-// 테두리 그리기
-void draw_border() {
-    int max_y, max_x;
-    getmaxyx(stdscr, max_y, max_x);
+/// @brief 내부 진행률 표시용 변수 (draw_screen에서만 사용)
+static int progress_display = 0;
 
-    // 상단, 하단 테두리
-    for (int i = 0; i < max_x; i++) {
-        mvaddch(0, i, '-');
-        mvaddch(max_y-1, i, '-');
-    }
-    // 좌측, 우측 테두리
-    for (int i = 1; i < max_y-1; i++) {
-        mvaddch(i, 0, '|');
-        mvaddch(i, max_x-1, '|');
-    }
-    // 네 귀퉁이
-    mvaddch(0, 0, '+');
-    mvaddch(0, max_x-1, '+');
-    mvaddch(max_y-1, 0, '+');
-    mvaddch(max_y-1, max_x-1, '+');
-
-}
-
-// 화면 그리기
-void draw_screen(int progress) {
+/// @brief 로딩 화면 그리기 함수
+static void draw_screen() {
     clear();
 
-    // 1. 상단 텍스트 (중앙)
-    const char *msg = "Loading...";
-    mvprintw(LINES / 2 - 2, (COLS - strlen(msg)) / 2, "%s", msg);
+    int y_center = LINES / 2;
+    int x_center = COLS / 2;
 
-    // 2. 진행 바 (중앙)
-    int bar_width = TOTAL_PLAYERS + 2; // [와 ] 포함
-    int bar_start = (COLS - bar_width) / 2;
-    mvprintw(LINES / 2, bar_start, "[");
-    for (int i = 0; i < TOTAL_PLAYERS; ++i) {
-        if (i < progress) {
-            addch('#');
-        } else {
-            addch('-');
-        }
+    mvprintw(y_center - 2, x_center - strlen(current_msg) / 2, "%s", current_msg);
+
+    int bar_start = x_center - (bar_length / 2 + 1);
+    mvprintw(y_center, bar_start, "[");
+
+    int filled = (progress_display * bar_length) / 100;
+    for (int i = 0; i < bar_length; ++i) {
+        addch(i < filled ? '#' : '-');
     }
     printw("]");
 
-    // 3. Cancel 버튼 (중앙)
-    const char *cancel = "Cancel";
-    mvprintw(LINES / 2 + 2, (COLS - strlen(cancel)) / 2, "%s", cancel);
+    if (cancel_enabled) {
+        const char* cancel_msg = "Press Q to cancel";
+        mvprintw(y_center + 2, x_center - strlen(cancel_msg) / 2, "%s", cancel_msg);
+    }
 
+    draw_border();
     refresh();
 }
 
-// 전체
-void waiting() {
+void set_cancel_enabled(bool enabled) {
+    cancel_enabled = enabled;
+}
+
+void set_waiting_message(const char* new_msg) {
+    strncpy(current_msg, new_msg, sizeof(current_msg) - 1);
+    current_msg[sizeof(current_msg) - 1] = '\0';
+}
+
+void update_task_status(TaskStatus* status, int progress, bool done, bool success) {
+    pthread_mutex_lock(&status->lock);
+    status->progress = progress;
+    status->done = done;
+    status->success = success;
+    pthread_mutex_unlock(&status->lock);
+}
+
+WaitingResult waiting(TaskStatus* status, void* (*thread_func)(void*)) {
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, thread_func, status) != 0) {
+        return WAIT_FAILED;
+    }
+
     initscr();
     noecho();
     curs_set(FALSE);
     nodelay(stdscr, TRUE);
     keypad(stdscr, TRUE);
 
-    int progress = 0;
-    int ch;
+    WaitingResult result = WAIT_SUCCESS;
 
     while (1) {
-        draw_screen(progress);
-        draw_border();
-
-        ch = getch(); // q 누르면 나감
-        if (ch == 'q' || ch == 'Q') {
+        // 사용자 입력 처리
+        int ch = getch();
+        if ((ch == 'q' || ch == 'Q') && cancel_enabled) {
+            result = WAIT_CANCELED;
             break;
         }
 
-        // 진행 바 자동 증가 (1초에 1칸, 원하면 usleep 값 조정)
-        if (progress <= TOTAL_PLAYERS) {
-            progress++;
-            usleep(500000); // 1초 대기
-        } else if (progress > TOTAL_PLAYERS) {
-            progress = 0;
-        }
-    }
-    endwin();
-}
+        // 상태 읽기
+        int prog;
+        bool done, success;
+        pthread_mutex_lock(&status->lock);
+        prog = status->progress;
+        done = status->done;
+        success = status->success;
+        pthread_mutex_unlock(&status->lock);
 
-int main() {
-    
-    waiting();
-    return 0;
+        progress_display = prog;
+        draw_screen();
+
+        // 종료 조건 판별
+        if (prog >= 100) {
+            if (done)
+                result = success ? WAIT_SUCCESS : WAIT_FAILED;
+            else
+                result = WAIT_CANCELED;
+            break;
+        }
+
+        usleep(500000); // 0.5초 주기
+    }
+
+    pthread_cancel(tid);  // 작업 강제 종료 (필요 시)
+    pthread_join(tid, NULL);
+    //endwin();
+    return result;
 }

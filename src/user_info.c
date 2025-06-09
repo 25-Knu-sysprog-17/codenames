@@ -61,3 +61,37 @@ int get_user_info_by_token(const char *token, char *user_id, int user_id_len, ch
     sqlite3_close(db);
     return 0;
 }
+
+int get_nickname_by_token(const char *token, char *nickname, int nickname_len) {
+    sqlite3 *db;
+    if (db_open(&db) != 0) return -1;
+
+    char user_id[64];
+        if (get_user_id_by_token(token, user_id, sizeof(user_id)) != 0) {
+        sqlite3_close(db);
+        return -1; // 토큰 유효하지 않음
+    }
+
+    sqlite3_stmt *stmt;
+    const char* sql = "SELECT nickname FROM users WHERE id = ?";
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "SQL error (prepare nickname): %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, user_id, -1, SQLITE_STATIC);
+
+    int result = -1;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char *nick = sqlite3_column_text(stmt, 0);
+        strncpy(nickname, (const char *)nick, nickname_len - 1);
+        nickname[nickname_len - 1] = '\0';
+        result = 0;
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return result;
+}
+

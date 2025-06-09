@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <stdbool.h>
 #include <openssl/ssl.h>
 
 #define SERVER_IP "127.0.0.1"
@@ -20,11 +21,15 @@ extern int game_sock;
 typedef enum {
     SCENE_LOGIN,     // 로그인 화면
     SCENE_SIGNUP,    // 회원가입 화면
-    SCENE_MAIN,      // 메인 화면(게임)
+    SCENE_MAIN,      // 로비
+    SCENE_BOARD,     // 게임화면
     SCENE_INVALID_TOKEN,
     SCENE_ERROR,
     SCENE_RESULT,
     SCENE_EXIT       // 종료
 } SceneState;
+
+int get_game_sock(void);
+void set_game_sock(int s);
 
 #endif

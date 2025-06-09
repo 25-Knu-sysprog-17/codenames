@@ -1,10 +1,11 @@
 #include "client.h"
 #include "login_screen.h"
-#include "main_screen.h"
+#include "lobby_screen.h"
 #include "signup_screen.h"
 #include "result_screen.h"
 #include "gui_invalid_token.h"
 #include <stdio.h>
+#include <locale.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <string.h>
@@ -21,8 +22,13 @@ SSL *ssl = NULL;
 char token[TOKEN_LEN] = {0};
 int game_sock = -1;
 
+int get_game_sock() { return game_sock; }
+void set_game_sock(int s) { game_sock = s; }
+
 int main() {
     // SSL 소켓으로 로그인/회원가입
+    setlocale(LC_ALL, ""); // 한글 설정
+
     struct sockaddr_in server_addr = {
         .sin_family = AF_INET,
         .sin_port = htons(SSL_PORT),
@@ -107,7 +113,7 @@ int main() {
 
         // 메인 화면(게임) 진입
         if(current_scene == SCENE_MAIN)
-            current_scene = main_screen_ui();
+            current_scene = lobby_screen();
         if(current_scene == SCENE_INVALID_TOKEN)
             show_invalid_token_screen();
         if(current_scene == SCENE_ERROR) {
@@ -120,19 +126,19 @@ int main() {
 
     // (임시) 게임 결과 화면 호출
     // 이것도 while 문 안에 넣어야 함.
-    int red_score = 3;
-    int blue_score = 9;
-    Result result = RESULT_WIN;
+    // int red_score = 3;
+    // int blue_score = 9;
+    // Result result = RESULT_WIN;
     
-    current_scene = result_function(red_score, blue_score, result);
-    if(current_scene == SCENE_INVALID_TOKEN) {
-        // 경고창 출력 -> 로그인 화면으로 */
-        show_invalid_token_screen();
-    }
-    if(current_scene == SCENE_ERROR) {
-        printf("error\n");
-        // break;
-    }
+    // current_scene = result_function(red_score, blue_score, result);
+    // if(current_scene == SCENE_INVALID_TOKEN) {
+    //     // 경고창 출력 -> 로그인 화면으로 */
+    //     show_invalid_token_screen();
+    // }
+    // if(current_scene == SCENE_ERROR) {
+    //     printf("error\n");
+    //     // break;
+    // }
 
     close(game_sock);
     return 0;

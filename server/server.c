@@ -13,6 +13,7 @@
 #include "session.h" 
 #include "user_info.h"
 #include "game_result.h"
+#include "room_manager.h"
 
 #define SERVER_PORT 55014
 #define TCP_PORT 55015
@@ -85,6 +86,7 @@ void *handle_ssl_client(void *arg) {
             int is_duplicate = check_nickname_duplicate(nickname);
             if (is_duplicate == 1) {
                 SSL_write(ssl, "NICKNAME_TAKEN", 14);
+                
             } else if (is_duplicate == 0) {
                 SSL_write(ssl, "NICKNAME_AVAILABLE", 18);
             } else {
@@ -182,6 +184,11 @@ void *handle_tcp_client(void *arg) {
             } else {
                 send(client_sock, "INVALID_TOKEN", 13, 0);
             }
+        } else if (strncmp(buffer, "CMD|QUERY_WAIT|", 15) == 0) {
+            char *token = buffer + 15;
+            
+            handle_waiting_command(client_sock, token);
+            client_response_loop(client_sock, token);           
         } else if (strncmp(buffer, "RESULT|", 7) == 0) { // 결과 저장
             // 예시: "RESULT|토큰값|WIN" 또는 "RESULT|토큰값|LOSS"
             char *token = buffer + 7;

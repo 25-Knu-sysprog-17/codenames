@@ -1,5 +1,6 @@
 #include "connect_to_server.h"
 #include "waiting_screen.h"
+#include "client.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

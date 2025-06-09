@@ -45,8 +45,3 @@ void show_invalid_token_screen() {
 
     endwin();
 }
-
-int main() {
-    show_invalid_token_screen();
-    return 0;
-}

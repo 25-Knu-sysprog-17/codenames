@@ -3,9 +3,6 @@
 
 #include "client.h"
 #include "codenames_screen.h"
-#include <sys/select.h>
-#include <sys/time.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <wchar.h>
 #include <wctype.h>
@@ -58,8 +55,6 @@ typedef struct {
     int ready;
     InputMode mode;
     int needs_redraw; // <- 리드로우용
-    int cursor_y;
-    int cursor_x;
 } SharedInput;
 
 static SharedInput shared_input = {
@@ -69,138 +64,67 @@ static SharedInput shared_input = {
     .mode = NONE
 };
 
-// 디버그용
-#define DEBUG_MSG_COUNT 3
-static char debug_messages[DEBUG_MSG_COUNT][1024] = { "" };
-static pthread_mutex_t debug_lock = PTHREAD_MUTEX_INITIALIZER;
-
-void set_debug_message(int index, const char* msg) {
-    if (index >= 0 && index < DEBUG_MSG_COUNT) {
-        pthread_mutex_lock(&debug_lock);
-        strncpy(debug_messages[index], msg, sizeof(debug_messages[index]) - 1);
-        debug_messages[index][sizeof(debug_messages[index]) - 1] = '\0';
-        pthread_mutex_unlock(&debug_lock);
-    }
-}
-
-void draw_debug_messages(int y, int x) {
-    pthread_mutex_lock(&debug_lock);
-    for (int i = 0; i < DEBUG_MSG_COUNT; i++) {
-        mvprintw(y - DEBUG_MSG_COUNT + i, x, "%s", debug_messages[i]);
-    }
-    pthread_mutex_unlock(&debug_lock);
-}
-
 void listener_signal_handler(int sig) {
     fprintf(stderr, "\n💥 [listener_thread] 크래시 감지됨: 시그널 %d (%s)\n", sig, strsignal(sig));
     fflush(stderr);
     _exit(1);
 }
 
-
-static bool cards_initialized = 0;
-
-bool are_cards_valid() {
-    for (int i = 0; i < MAX_CARDS; i++) {
-        if (cards[i].name[0] == '\0') return false;
-        if (cards[i].type < 0 || cards[i].type > 3) return false;
-    }
-    return true;
-}
-
 void* input_thread_func(void* arg) {
     wint_t wch;
-    wchar_t local_buf[MAX_INPUT_LEN] = { 0 };  // ✅ 초기화 한 번만
+    wchar_t local_buf[MAX_INPUT_LEN];
     int len = 0;
 
     while (1) {
+        wmemset(local_buf, 0, MAX_INPUT_LEN);
         if (get_wch(&wch) == ERR) continue;
 
         pthread_mutex_lock(&shared_input.lock);
-
-        char dbg[128];
-        wcstombs(dbg, local_buf, sizeof(dbg) - 1);
-        dbg[sizeof(dbg) - 1] = '\0';
-
+        
+        // mvprintw(1, 1, "입력됨: %lc (code: %d) ", wch, wch); - 디버깅용
+        // refresh();
+        
         // ✅ 채팅 스크롤 조절
-        if (wch == KEY_UP || wch == KEY_DOWN || wch == KEY_LEFT || wch == KEY_RIGHT) {
-            pthread_mutex_unlock(&shared_input.lock);
+        if (shared_input.mode == INPUT_CHAT && (wch == KEY_UP || wch == KEY_DOWN)) {
+            pthread_mutex_unlock(&shared_input.lock); // 잠금 해제
             pthread_mutex_lock(&chat_log_lock);
             if (wch == KEY_UP && chat_scroll_offset + 1 < chat_count)
                 chat_scroll_offset++;
             else if (wch == KEY_DOWN && chat_scroll_offset > 0)
                 chat_scroll_offset--;
             pthread_mutex_unlock(&chat_log_lock);
-
-            set_debug_message(1, "↑↓ 스크롤 동작");
             continue;
         }
 
         if (wch == L'\n') {
             if (len >= MAX_INPUT_LEN) len = MAX_INPUT_LEN - 1;
-            local_buf[len] = L'\0';  // 종료 문자 삽입
+            local_buf[len] = L'\0';  // 안전하게 종료 문자 삽입
 
             wcsncpy(shared_input.input_buf, local_buf, MAX_INPUT_LEN - 1);
             shared_input.input_buf[MAX_INPUT_LEN - 1] = L'\0';  // 명시적 종료
 
             shared_input.ready = 1;
+            shared_input.needs_redraw = 1;
             len = 0;
-            
-            wmemset(local_buf, 0, MAX_INPUT_LEN);  // ✅ 여기서만 초기화
-            pthread_mutex_unlock(&shared_input.lock);
-            continue;
         } else if (wch == 127 || wch == KEY_BACKSPACE) {
             if (len > 0) len--;
-            local_buf[len] = L'\0';  // 덮어쓰기
-            set_debug_message(1, "⌫ Backspace 처리됨");
-
-        } else if (wch == L'\t') {
-            int my_index = global_info.myPlayerIndex;
-            int my_team = global_info.players[my_index].team;
-            bool is_leader = global_info.players[my_index].is_leader;
-
-            if (shared_input.mode == INPUT_CHAT) {
-                if (my_team == turn_team && is_leader && phase == 0) {
-                    if (strlen(hintWord) > 0) {
-                        shared_input.mode = INPUT_LINK;
-                        set_debug_message(1, "Tab: 채팅 → LINK (힌트 이미 입력됨)");
-                    } else {
-                        shared_input.mode = INPUT_HINT;
-                        set_debug_message(1, "Tab: 채팅 → HINT");
-                    }
-                } else if (my_team == turn_team && !is_leader && phase == 1) {
-                    shared_input.mode = INPUT_ANSWER;
-                    set_debug_message(1, "Tab: 채팅 → ANSWER");
-                } else {
-                    shared_input.mode = NONE;
-                    set_debug_message(1, "Tab: 채팅 → NONE (내 턴 아님)");
-                }
-            } else {
-                shared_input.mode = INPUT_CHAT;
-                set_debug_message(1, "Tab: 입력모드 → 채팅");
-            }
-
+        } else if (wch == L'\t') {  // Tab → 채팅 모드 전환
+            shared_input.mode = INPUT_CHAT;
+            shared_input.ready = 1;
+            shared_input.needs_redraw = 1;
             len = 0;
-            wmemset(local_buf, 0, MAX_INPUT_LEN);
-
-        } else if (wch == 1) {
+        } else if (wch == 1) {     // Ctrl+A → 신고 모드
             shared_input.mode = INPUT_REPORT;
+            shared_input.ready = 1;
+            shared_input.needs_redraw = 1;
             len = 0;
-            wmemset(local_buf, 0, MAX_INPUT_LEN);
-            set_debug_message(1, "Ctrl+A: 입력모드 → 신고");
-
-        } else if (!iswcntrl(wch) && wch < 0x110000 && len < MAX_INPUT_LEN - 1) {
+        } else if (iswprint(wch) && len < MAX_INPUT_LEN - 1) {
             local_buf[len++] = wch;
-            local_buf[len] = L'\0';  // 안전하게 null 종결
-
-            snprintf(dbg, sizeof(dbg), "문자 입력: %lc", wch);
-            set_debug_message(1, dbg);
         }
 
         wcsncpy(shared_input.input_buf, local_buf, MAX_INPUT_LEN);
         pthread_mutex_unlock(&shared_input.lock);
     }
-
     return NULL;
 }
 
@@ -248,7 +172,7 @@ void draw_team_ui(int y, int x, int red, int blue) {
     }
 
     attron(COLOR_PAIR(3));
-    mvprintw(y + 5, x, "블루 팀      남은 단어 - %d", 8 - blue);
+    mvprintw(y + 5, x, "레드 팀      남은 단어 - %d", 8 - blue);
     attroff(COLOR_PAIR(3));
 
     for (int i = 3; i < 6; i++) {
@@ -275,14 +199,9 @@ void draw_chat_ui(int y, int x) {
             const char* msg = chat_log[idx];
             if (msg[0] == '\x01') {
                 int color = msg[1] - '0';
-                char* content = strchr(msg + 2, '\x01');  // 두 번째 \x01 찾기
-                if (content) {
-                    content++;  // 그 이후부터가 실제 메시지
-                    attron(COLOR_PAIR(color));
-                    mvprintw(y + i + 1, x, "%s", content);
-                    clrtoeol();
-                    attroff(COLOR_PAIR(color));
-                }
+                attron(COLOR_PAIR(color));
+                mvprintw(y + i + 1, x, "%s", msg + 2); // 내용 출력
+                attroff(COLOR_PAIR(color));
             } else {
                 mvprintw(y + i + 1, x, "%s", msg);
             }
@@ -294,29 +213,21 @@ void draw_chat_ui(int y, int x) {
     pthread_mutex_unlock(&chat_log_lock);
 
     mvprintw(y + visible_lines - 11, x, "Tab으로 채팅 전환 Ctrl+A로 신고모드 전환 / ↑↓ 스크롤");
-    draw_debug_messages(y + visible_lines - 12, x);
 }
 
-void redraw_chat_input_line(const wchar_t* label) {
+void redraw_chat_input_line(int y, int x) {
+    wchar_t copy[MAX_INPUT_LEN];
     pthread_mutex_lock(&shared_input.lock);
-    int y = shared_input.cursor_y;
-    int x = shared_input.cursor_x;
-    wchar_t input_copy[MAX_INPUT_LEN];
-    wcsncpy(input_copy, shared_input.input_buf, MAX_INPUT_LEN);
+    wcsncpy(copy, shared_input.input_buf, MAX_INPUT_LEN);
     pthread_mutex_unlock(&shared_input.lock);
 
-    int label_width = wcswidth(label, -1);
-    if (label_width < 0) label_width = wcslen(label);  // fallback
-
-    int input_start_x = x + label_width;
-
-    mvaddwstr(y, x, label);
-    mvaddwstr(y, input_start_x, input_copy);
-    
-    int input_width = wcswidth(input_copy, -1);
-    if (input_width < 0) input_width = wcslen(input_copy);  // fallback
-
-    move(y, input_start_x + input_width);
+    int width = wcswidth(copy, -1);
+    if (width < 0) width = 0;
+    move(y, x);
+    clrtoeol();
+    mvaddwstr(y, x, copy);
+    move(y, x + width);
+    refresh();
 }
 
 void append_chat_log(const char* msg) {
@@ -369,45 +280,27 @@ void* listener_thread(void* arg) {
     signal(SIGILL, listener_signal_handler);
     signal(SIGBUS, listener_signal_handler);
     signal(SIGPIPE, SIG_IGN);
-
+    
     int sock = get_game_sock();
     char readbuf[1024];
     char leftover[4096] = "";
+    printf("[listener_thread 시작됨] socket=%d\n", sock);
+    fflush(stdout);
 
     listener_alive = 1;
     time_t last_card_request = 0;
-    
+    int cards_initialized = 0;
+
     while (1) {
         if (gameOver) break;
 
-        if (!cards_initialized) {
-            if (time(NULL) - last_card_request >= 3) {
-                if (!(cards_initialized = are_cards_valid())) {
-                    send(sock, "GET_ALL_CARDS\n", strlen("GET_ALL_CARDS\n"), 0);
-                    last_card_request = time(NULL);
-                }
-            }
+        if (!cards_initialized && time(NULL) - last_card_request >= 3) {
+            send(sock, "GET_ALL_CARDS\n", strlen("GET_ALL_CARDS\n"), 0);
+            last_card_request = time(NULL);
+            printf("🔁 GET_ALL_CARDS 요청 재전송\n");
+            fflush(stdout);
         }
 
-        // select 준비
-        fd_set read_fds;
-        FD_ZERO(&read_fds);
-        FD_SET(sock, &read_fds);
-
-        struct timeval timeout;
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
-
-        int sel = select(sock + 1, &read_fds, NULL, NULL, &timeout);
-        if (sel < 0) {
-            perror("❌ [listener_thread] select 실패");
-            break;
-        } else if (sel == 0) {
-            // timeout - 아무것도 안옴
-            continue;
-        }
-
-        // 읽을 수 있는 데이터가 있음
         int len = recv(sock, readbuf, sizeof(readbuf) - 1, 0);
         if (len <= 0) {
             perror("❌ [listener_thread] recv 실패 또는 연결 종료");
@@ -417,9 +310,18 @@ void* listener_thread(void* arg) {
         }
 
         readbuf[len] = '\0';
+        printf("📥 수신 원본 ↓↓↓ (%d bytes)\n%s\n---------------------\n", len, readbuf);
+        fflush(stdout);
+
         strncat(leftover, readbuf, sizeof(leftover) - strlen(leftover) - 1);
-        
-        //set_debug_message(0, leftover); // 디버깅
+
+        // 🧪 leftover 상태 진단
+        printf("🧪 leftover 누적 상태: [%s]\n", leftover);
+        if (strstr(leftover, "ALL_CARDS|") && strchr(leftover, '\n') == NULL) {
+            printf("⚠️ ALL_CARDS 쪼개짐 감지: 개행 없음, 다음 recv까지 대기중\n");
+        }
+        fflush(stdout);
+
         char* line_start = leftover;
         char* newline;
         while ((newline = strchr(line_start, '\n')) != NULL) {
@@ -435,32 +337,26 @@ void* listener_thread(void* arg) {
                 send(sock, "GET_ALL_CARDS\n", strlen("GET_ALL_CARDS\n"), 0);
                 last_card_request = time(NULL);
             } else if (strncmp(line, "ALL_CARDS|", 10) == 0) {
-                
                 int success = 1;
 
-                char* payload = strdup(line + 10);
-
-                // 토큰 개수 확인
+                // 🔍 사전 토큰 수 검사 (75개 이상이어야 정상)
+                char* tmp_copy = strdup(line + 10);
                 int token_count = 0;
-                char* check_tok = strtok(payload, "|");
+                char* check_tok = strtok(tmp_copy, "|");
                 while (check_tok) {
                     token_count++;
                     check_tok = strtok(NULL, "|");
                 }
+                free(tmp_copy);
 
                 if (token_count != MAX_CARDS * 3) {
-                    printf("❌ ALL_CARDS 파싱 실패: 토큰 개수 %d (정상: %d)\n", token_count, MAX_CARDS * 3);
+                    printf("❌ ALL_CARDS 파싱 실패: 토큰 개수 %d (정상: 75)\n", token_count);
                     fflush(stdout);
-                    success = 0;
-                    free(payload);
                     continue;
                 }
 
-                // 다시 파싱 시작 (복사본 재사용 위해 strdup 다시 호출)
-                free(payload);
-                payload = strdup(line + 10);
-                char* token = strtok(payload, "|");
-
+                // ✅ 본격 파싱 시작
+                char* token = strtok(line + 10, "|");
                 for (int i = 0; i < MAX_CARDS; i++) {
                     if (!token) { success = 0; break; }
                     strncpy(cards[i].name, token, sizeof(cards[i].name) - 1);
@@ -474,14 +370,20 @@ void* listener_thread(void* arg) {
                     if (!token) { success = 0; break; }
                     cards[i].isUsed = atoi(token);
 
-                    token = strtok(NULL, "|");
+                    token = strtok(NULL, "|");  // 다음으로 진행
                 }
-                
-                free(payload);
+
                 if (success) {
                     cards_initialized = 1;
+                    printf("✅ ALL_CARDS 수신 완료\n");
+                    fflush(stdout);
+                } else {
+                    printf("❌ ALL_CARDS 파싱 실패 (도중 누락 발생)\n");
+                    fflush(stdout);
                 }
-            } else if (strncmp(line, "CARD_UPDATE|", 12) == 0) {
+            }
+
+            if (strncmp(line, "CARD_UPDATE|", 12) == 0) {
                 char* ptr = line + 12;
                 char* idx_str = strtok(ptr, "|");
                 char* used_str = strtok(NULL, "|");
@@ -491,7 +393,6 @@ void* listener_thread(void* arg) {
                     if (idx >= 0 && idx < MAX_CARDS) cards[idx].isUsed = used;
                 }
             } else if (strncmp(line, "TURN_UPDATE|", 12) == 0) {
-                //set_debug_message(0, line);
                 char* ptr = line + 12;
                 char* tok1 = strtok(ptr, "|");
                 char* tok2 = strtok(NULL, "|");
@@ -534,11 +435,10 @@ void* listener_thread(void* arg) {
                     hintCount = atoi(count_str);
 
                     char sys_msg[128];
-                    snprintf(sys_msg, sizeof(sys_msg), "[팀장 입력 힌트: %s, 연결 수 - %d, %d번 시도 가능합니다.]", hintWord, hintCount, hintCount);
+                    snprintf(sys_msg, sizeof(sys_msg), "[팀장 입력 힌트: %s]", hintWord);
                     append_chat_log(sys_msg);
                 }
             } else if (strncmp(line, "CHAT|", 5) == 0) {
-                //set_debug_message(2, line);
                 char* ptr = line + 5;
                 char* team_str = strtok(ptr, "|");
                 char* leader_str = strtok(NULL, "|");
@@ -553,35 +453,21 @@ void* listener_thread(void* arg) {
                     bool my_is_leader = global_info.players[my_index].is_leader;
 
                     bool visible = false;
-
-                    if (sender_team == 2) {
-                        // 시스템 메시지
+                    if (sender_team == my_team) {
+                        if ((sender_is_leader && my_is_leader) || (!sender_is_leader && !my_is_leader)) {
+                            visible = true;
+                        }
+                    } else if (sender_team == 3) {
                         visible = true;
-                    } else if (sender_team == my_team) {
-                        // 같은 팀
-                        if (!sender_is_leader) {
-                            // 팀원 발언 -> 팀원, 팀장 모두 볼 수 있음
-                            visible = true;
-                        } else if (sender_is_leader && my_is_leader) {
-                            // 팀장 발언 -> 같은 팀 팀장만 볼 수 있음
-                            visible = true;
-                        }
-                        // 팀장 발언 -> 팀원은 X (아무것도 안 함)
                     } else {
-                        // 다른 팀
-                        if (!sender_is_leader) {
-                            // 팀원 <-> 팀원
-                            visible = true;
-                        } else if (sender_is_leader && my_is_leader) {
-                            // 팀장 <-> 팀장
+                        if (sender_is_leader && my_is_leader) {
                             visible = true;
                         }
-                        // 교차 팀장 <-> 팀원 X
-
                     }
+
                     if (visible) {
                         char formatted[256];
-                        if (sender_team == 2) {
+                        if (sender_team == 3) {
                             snprintf(formatted, sizeof(formatted), "[%s]", content);
                             append_chat_log(formatted);
                         } else {
@@ -592,12 +478,13 @@ void* listener_thread(void* arg) {
                     }
                 }
             } else if (strncmp(line, "GAME_OVER|", 10) == 0) {
-                gameOver = 1; // 게임 오버 수신시 처리는 여기서 구현하세요
+                gameOver = 1;
             }
 
             line_start = newline + 1;
         }
 
+        // 처리 후 남은 leftover 정리
         size_t remaining = strlen(line_start);
         if (remaining >= sizeof(leftover)) remaining = sizeof(leftover) - 1;
         memmove(leftover, line_start, remaining);
@@ -606,38 +493,6 @@ void* listener_thread(void* arg) {
 
     listener_alive = 0;
     return NULL;
-}
-
-void update_input_position_for_mode(InputMode mode, int term_y, int term_x, int chat_y, int board_offset_x) {
-    pthread_mutex_lock(&shared_input.lock);
-    shared_input.cursor_y = term_y - 2;  // 기본값 (예: 화면 하단 입력)
-    shared_input.cursor_x = 2;
-
-    switch (mode) {
-        case INPUT_CHAT:
-            shared_input.cursor_y = chat_y + 14;
-            shared_input.cursor_x = 2;
-            break;
-        case INPUT_HINT:
-            shared_input.cursor_y = chat_y + 14;
-            shared_input.cursor_x = board_offset_x;
-            break;
-        case INPUT_LINK:
-            shared_input.cursor_y = chat_y + 14;
-            shared_input.cursor_x = board_offset_x;
-            break;
-        case INPUT_ANSWER:
-            shared_input.cursor_y = chat_y + 14;
-            shared_input.cursor_x = board_offset_x;
-            break;
-        case INPUT_REPORT:
-            shared_input.cursor_y = term_y - 2;
-            shared_input.cursor_x = 4;
-            break;
-        default: break;
-    }
-
-    pthread_mutex_unlock(&shared_input.lock);
 }
 
 SceneState codenames_screen(GameInitInfo info) {
@@ -666,10 +521,14 @@ SceneState codenames_screen(GameInitInfo info) {
 
     pthread_detach(input_tid);
     pthread_detach(tid);
+
+    // append_chat_log("[게임 시작!]");
+    // char init_msg[64];
+    // snprintf(init_msg, sizeof(init_msg), "[%s팀의 턴입니다.]", turn_team == 0 ? "레드" : "블루");
+    // append_chat_log(init_msg);
     
     while (1) {
-        erase(); 
-        //clear(); // 디버깅
+        erase();
 
         if (!listener_alive) {
             mvprintw(1, 2, "❌ listener_thread가 비정상 종료됨 (네트워크 문제?)");
@@ -679,9 +538,6 @@ SceneState codenames_screen(GameInitInfo info) {
         int term_y, term_x;
         getmaxyx(stdscr, term_y, term_x);
         (void)term_y;
-
-        time_t now = time(NULL);
-        mvprintw(1, term_x - 20, "⏰ %ld", now);
 
         // 보드 위치 계산
         int board_offset_x = (term_x - (12 * BOARD_SIZE)) / 2;
@@ -701,57 +557,41 @@ SceneState codenames_screen(GameInitInfo info) {
         const char* team = (turn_team == 0) ? "레드팀" : "블루팀";
         const char* role = (phase == 0) ? "팀장" : "팀원";
         mvprintw(0, 2, "[%s %s 차례]", team, role);
-        
-        int my_index = global_info.myPlayerIndex;
-        int my_team = global_info.players[my_index].team;
-        bool is_leader = global_info.players[my_index].is_leader;
-
-        bool is_my_turn = false;
-        if (my_team == turn_team) {
-            if ((phase == 0 && is_leader) || (phase == 1 && !is_leader)) {
-                is_my_turn = true;
-            }
-        }
 
         // UI 출력
         draw_team_ui(2, 2, redScore, blueScore);
         draw_board(board_offset_x, board_offset_y, global_info.players[global_info.myPlayerIndex].is_leader);
         draw_chat_ui(chat_y, 2);
         
-        const wchar_t* guide_label = L"";
-        InputMode current_mode;
+        // redraw
+        pthread_mutex_lock(&shared_input.lock);
+        if (shared_input.needs_redraw) {
+            redraw_chat_input_line(chat_y + 14, 2);
+            shared_input.needs_redraw = 0;
+        }
+        pthread_mutex_unlock(&shared_input.lock);
 
         // ✅ 입력 처리: 입력이 준비되었는가?
         pthread_mutex_lock(&shared_input.lock);
-        switch (shared_input.mode) {
-            case INPUT_CHAT:   guide_label = L"채팅 입력:"; break;
-            case INPUT_HINT:   guide_label = L"힌트를 입력하세요: "; break;
-            case INPUT_LINK:   guide_label = L"연결 수를 입력하세요: "; break;
-            case INPUT_ANSWER: guide_label = L"정답을 입력하세요:"; break;
-            default: break;
-        }
 
         if (shared_input.ready) {
             wchar_t input[MAX_INPUT_LEN];
             wcscpy(input, shared_input.input_buf);
             InputMode mode = shared_input.mode;
             shared_input.ready = 0;
-            wmemset(shared_input.input_buf, 0, MAX_INPUT_LEN);  // 💡 버퍼 초기화
             pthread_mutex_unlock(&shared_input.lock);
-            
-            char converted[180];
+
+            char converted[128];
             if (wcstombs(converted, input, sizeof(converted)) == (size_t)-1) {
                 converted[0] = '\0'; // 에러 처리
-                set_debug_message(0, "변환 오류");
-            } 
+            }
 
             switch (mode) {
                 case INPUT_CHAT: {
                     if (strlen(converted) > 0) {
-                        char msg[200];
+                        char msg[160];
                         snprintf(msg, sizeof(msg), "CHAT|%s\n", converted);
                         send(sock, msg, strlen(msg), 0);
-                        set_debug_message(0, msg);
                     }
                     break;
                 }
@@ -765,9 +605,7 @@ SceneState codenames_screen(GameInitInfo info) {
                         char msg[128];
                         snprintf(msg, sizeof(msg), "HINT|%s|%d\n", hintWord, hintCount);
                         send(sock, msg, strlen(msg), 0);
-                        set_debug_message(0, msg);
                     }
-                    shared_input.mode = NONE;
                     break;
                 case INPUT_ANSWER:
                     strncpy(answer_text, converted, sizeof(answer_text));
@@ -775,7 +613,6 @@ SceneState codenames_screen(GameInitInfo info) {
                         char msg[128];
                         snprintf(msg, sizeof(msg), "ANSWER|%s\n", answer_text);
                         send(sock, msg, strlen(msg), 0);
-                        set_debug_message(0, msg);
                     }
                     break;
                 case INPUT_REPORT:
@@ -800,19 +637,27 @@ SceneState codenames_screen(GameInitInfo info) {
             }
 
         } else {
-            current_mode = shared_input.mode;
+            const char* guide_msg = NULL;
+            switch (shared_input.mode) {
+                case INPUT_HINT:
+                    guide_msg = "힌트를 입력하세요: ";
+                    break;
+                case INPUT_LINK:
+                    guide_msg = "연결 수를 입력하세요: ";
+                    break;
+                case INPUT_ANSWER:
+                    guide_msg = "정답을 입력하세요:";
+                    break;
+                default: break;
+            }
             pthread_mutex_unlock(&shared_input.lock);
+
+            if (guide_msg) {
+                mvprintw(chat_y + 13, board_offset_x, "%s", guide_msg);
+            }
         }
 
-        pthread_mutex_lock(&shared_input.lock);
-        current_mode = shared_input.mode;
-        pthread_mutex_unlock(&shared_input.lock);
-
-        curs_set((is_my_turn || current_mode == INPUT_CHAT) ? 1 : 0);
-        update_input_position_for_mode(current_mode, term_y, term_x, chat_y, board_offset_x);
-        redraw_chat_input_line(guide_label);
-
-        usleep(150000);
+        usleep(150000);  // UI 과부하 방지용 sleep
         refresh();
     }
 
