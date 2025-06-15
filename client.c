@@ -162,17 +162,10 @@ int main() {
 
     }
 
-        /*current_scene = login_screen(id, pw);
-
-        int red_score = 3;
-        int blue_score = 9;
-        Result results = RESULT_WIN;
-        
-        current_scene = result_function(red_score, blue_score, results);*/
-
+    // nickname이 "zxdf"인 사용자 신고
         /*strcpy(nickname, "zxdf"); 
         ReportResult report_result = send_report_request(nickname);
-        /*switch (report_result) {
+        switch (report_result) {
             case REPORT_SUCCESS:
                 printf("신고가 완료되었습니다.\n");
                 break;
@@ -188,88 +181,12 @@ int main() {
             case REPORT_ERROR:
                 printf("신고 중 오류가 발생했습니다.\n");
                 break;
-        }*/
-        /*report_result = send_report_request(nickname);
+        }
         report_result = send_report_request(nickname);
+        report_result = send_report_request(nickname);*/
 
-        current_scene = login_screen(id, pw);*/
-        /*
-        while (current_scene != SCENE_MAIN) {
-            if (current_scene == SCENE_LOGIN) {
-                current_scene = login_screen(id, pw);
-            } else if (current_scene == SCENE_SIGNUP) {
-                current_scene = signup_screen(id, pw, nickname);
-            }
-        }
 
-        // 메인 화면(게임) 진입
-        if(current_scene == SCENE_MAIN)
-            current_scene = lobby_screen();
-        if(current_scene == SCENE_INVALID_TOKEN) {
-            show_invalid_token_screen();
-            current_scene = login_screen(id, pw);
-            if (current_scene == SCENE_SIGNUP) {
-                current_scene = signup_screen(id, pw, nickname);
-            }
-        }
-        if(current_scene == SCENE_ERROR) {
-            printf("error\n");
-            break;
-        }
-        if(current_scene == SCENE_EXIT)
-            break;
-
-        // int red_score = 3;
-        // int blue_score = 9;
-        Result result = RESULT_WIN;
-        
-        current_scene = result_function(red_score, blue_score, result);
-        if(current_scene == SCENE_INVALID_TOKEN) {
-            // 경고창 출력 -> 로그인 화면으로 
-            show_invalid_token_screen();
-            current_scene = login_screen(id, pw);
-
-        }
-        if(current_scene == SCENE_ERROR) {
-            printf("error\n");
-            // break;
-        }
-
-        // 
-        red_score = 3;
-        blue_score = 9;
-        // Result results = RESULT_WIN;
-        
-        current_scene = result_function(red_score, blue_score, results);
-        if(current_scene == SCENE_INVALID_TOKEN) {
-            // 경고창 출력 -> 로그인 화면으로 */
-            /*show_invalid_token_screen();
-        }
-        if(current_scene == SCENE_ERROR) {
-            printf("error\n");
-            // break;
-        }*/
-
-    /*    
-    }
-
-    // (임시) 게임 결과 화면 호출
-    // 이것도 while 문 안에 넣어야 함.
-    int red_score = 3;
-    int blue_score = 9;
-    Result result = RESULT_WIN;
-    
-    current_scene = result_function(red_score, blue_score, result);
-    if(current_scene == SCENE_INVALID_TOKEN) {
-        // 경고창 출력 -> 로그인 화면으로 */
-        /*show_invalid_token_screen();
-    }
-    if(current_scene == SCENE_ERROR) {
-        printf("error\n");
-        // break;
-    }
-
-    // 
+    /*
     strcpy(nickname, "aaaa"); 
     ReportResult report_result = send_report_request(nickname);
     switch (report_result) {
