@@ -1,4 +1,6 @@
+#include "session.h"
 #include "user_info.h"
+#include "user_report.h"
 #include "room_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -191,6 +193,39 @@ void* client_response_loop(int client_sock, const char* token) {
                 strncat(cards_msg, "\n", sizeof(cards_msg) - strlen(cards_msg) - 1);
                 send(client_sock, cards_msg, strlen(cards_msg), 0);
                 printf(">>> To [%d]: %s", client_sock, cards_msg);
+            } else if (strncmp(line, "REPORT|", 7) == 0) {
+                char* token_ptr = line + 7;
+                char* nickname = strchr(token_ptr, '|');
+                if (!nickname) {
+                    send(client_sock, "REPORT_ERROR|INVALID_REQUEST\n", 30, 0);
+                    continue;
+                }
+                *nickname++ = '\0';
+
+                char user_id[64], target_id[64];
+                if (get_user_id_by_token(token_ptr, user_id, sizeof(user_id)) != 0) {
+                    send(client_sock, "REPORT_ERROR|INVALID_TOKEN\n", 28, 0);
+                    continue;
+                }
+
+                if (get_user_id_by_nickname(nickname, target_id) != 0) {
+                    send(client_sock, "REPORT_ERROR|USER_NOT_FOUND\n", 29, 0);
+                    continue;
+                }
+
+                int report_count = report_user(target_id);
+                if (report_count < 0) {
+                    send(client_sock, "REPORT_ERROR|DB_ERROR\n", 23, 0);
+                    continue;
+                }
+
+                char response[128];
+                if (report_count >= 3) {
+                    snprintf(response, sizeof(response), "REPORT_OK|%d|SUSPENDED\n", report_count);
+                } else {
+                    snprintf(response, sizeof(response), "REPORT_OK|%d\n", report_count);
+                }
+                send(client_sock, response, strlen(response), 0);
             }
             line = strtok_r(NULL, "\n", &saveptr);
         }
@@ -403,8 +438,10 @@ void* run_game_session(void* arg) {
         } else if (ev.type == EVENT_ANSWER && session->phase == 1 && !is_leader && player_team == session->turn_team) {
             // ANSWER|단어
             char* answer = ev.data + 7;
+            bool card_found = false;
             for (int i = 0; i < MAX_CARDS; ++i) {
                 if (!session->cards[i].isUsed && strcmp(session->cards[i].name, answer) == 0) {
+                    card_found = true;
                     session->cards[i].isUsed = 1;
                     int t = session->cards[i].type;
 
@@ -449,10 +486,28 @@ void* run_game_session(void* arg) {
                                                 snprintf(chat_msg, sizeof(chat_msg), "CHAT|%d|%d|%s|%s",
                                     SYSTEM_TEAM, 0, SYSTEM_NAME, "암살자 카드 선택, 사망하셨습니다.");
                         broadcast_to_all(session, chat_msg);
+                        
+                        pthread_mutex_unlock(&session->game_lock);
+                        goto event_gameover;
                     }
                     break;
                 }
             }
+ 
+            if (!card_found) {
+                // 클라이언트에게만 잘못된 단어 알림
+                int client_sock = session->init_info.players[ev.player_index].info.sock;
+                char warn_msg[256];
+                snprintf(warn_msg, sizeof(warn_msg), "CHAT|%d|0|%s|선택한 단어가 보드에 없습니다. 다시 입력하세요.\n",
+                        SYSTEM_TEAM, SYSTEM_NAME);
+                send(client_sock, warn_msg, strlen(warn_msg), 0);
+
+                // 턴과 시도는 유지
+                pthread_mutex_unlock(&session->game_lock);
+                usleep(10000);
+                continue;
+            }
+
             session->remaining_tries--;
             
             char turn_msg[128];
@@ -463,11 +518,19 @@ void* run_game_session(void* arg) {
                 // 턴 전환 알림
                 snprintf(turn_msg, sizeof(turn_msg), "TURN_UPDATE|%d|%d|%d|%d",
                         session->turn_team, session->phase, session->redScore, session->blueScore);
+
+                broadcast_to_all(session, turn_msg);
             } else {
-                snprintf(turn_msg, sizeof(turn_msg), "CHAT|%d|0|%s|%s팀 남은 횟수 : %d",
+                // 점수 전송을 위해 TURN_UPDATE 재사용
+                snprintf(turn_msg, sizeof(turn_msg), "TURN_UPDATE|%d|%d|%d|%d",
+                        SYSTEM_TEAM, session->phase, session->redScore, session->blueScore);
+                broadcast_to_all(session, turn_msg);
+                
+                char chat_msg[256];
+                snprintf(chat_msg, sizeof(chat_msg), "CHAT|%d|0|%s|%s팀 남은 횟수 : %d",
                 SYSTEM_TEAM, SYSTEM_NAME, session->turn_team == 0 ? "레드" : "블루",session->remaining_tries);
+                broadcast_to_all(session, chat_msg);
             }
-            broadcast_to_all(session, turn_msg);
         } else if (ev.type == EVENT_CHAT) {
             const char* msg = ev.data + 5;
             const PlayerEntry* sender = &session->init_info.players[ev.player_index];
@@ -487,6 +550,7 @@ void* run_game_session(void* arg) {
         usleep(10000);
     }
 
+event_gameover:
     // 게임 종료 메시지 전송
     int winner_team = (session->redScore >= 9) ? 0 :
                       (session->blueScore >= 8) ? 1 :
@@ -559,6 +623,7 @@ bool assign_cards(const char* filename, GameCard cards[MAX_CARDS]) {
 void broadcast_to_all(GameSession* session, const char* msg) {
     char full_msg[1024];
     snprintf(full_msg, sizeof(full_msg), "%s\n", msg);  // \n 붙이기
+    printf("Server Response(broadcast): %s\n", full_msg);
     for (int i = 0; i < MAX_ROOM_PLAYERS; ++i) {
         int sock = session->init_info.players[i].info.sock;
         if (sock > 0) {

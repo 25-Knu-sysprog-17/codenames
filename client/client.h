@@ -29,6 +29,16 @@ typedef enum {
     SCENE_EXIT       // 종료
 } SceneState;
 
+typedef enum {
+    RESULT_WIN,
+    RESULT_LOSE,
+} Result;
+
+extern int redScore;
+extern int blueScore;
+extern Result result;
+extern int winner_team;
+
 int get_game_sock(void);
 void set_game_sock(int s);
 

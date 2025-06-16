@@ -148,6 +148,32 @@ void *handle_ssl_client(void *arg) {
             } else { // 기타 오류
                 SSL_write(ssl, "LOGIN_ERROR", strlen("LOGIN_ERROR"));
             }
+        } else if (strncmp(buffer, "EDIT_NICK|", 10) == 0) { // 닉네임 수정
+            // 요청 파싱 "EDIT_NICK|토큰|새닉네임"
+            char *token = buffer + 10;
+            char *new_nick = strchr(token, '|');
+            if (!new_nick) {
+                SSL_write(ssl, "NICKNAME_EDIT_ERROR", 19);
+                continue;
+            }
+            *new_nick++ = '\0';
+
+            // 토큰으로 user_id 가져오기
+            char user_id[64];
+            if (get_user_id_by_token(token, user_id, sizeof(user_id)) != 0) {
+                SSL_write(ssl, "INVALID_TOKEN", 19); // 토큰 무효
+                continue;
+            }
+
+            // 닉네임 변경 시도
+            int res = change_nickname(user_id, new_nick);
+            if (res == 0) {
+                SSL_write(ssl, "NICKNAME_EDIT_OK", 16); // 성공
+            } else if (res == -2) {
+                SSL_write(ssl, "NICK_DUPLICATE", 14); // 닉네임 중복
+            } else {
+                SSL_write(ssl, "NICKNAME_EDIT_ERROR", 19); // 기타 오류
+            }
         } else {
             SSL_write(ssl, "ERROR", 5);
         }
