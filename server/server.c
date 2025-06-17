@@ -80,20 +80,7 @@ void *handle_ssl_client(void *arg) {
             } else {
                 SSL_write(ssl, "ERROR", 5);
             }
-        }
-        else if (strncmp(buffer, "CHECK_NICKNAME|", 15) == 0) { // 닉네임 중복 검사
-            char *nickname = buffer + 15;
-            int is_duplicate = check_nickname_duplicate(nickname);
-            if (is_duplicate == 1) {
-                SSL_write(ssl, "NICKNAME_TAKEN", 14);
-                
-            } else if (is_duplicate == 0) {
-                SSL_write(ssl, "NICKNAME_AVAILABLE", 18);
-            } else {
-                SSL_write(ssl, "ERROR", 5);
-            }
-        }
-        else if (strncmp(buffer, "SIGNUP|", 7) == 0) { // 회원가입
+        } else if (strncmp(buffer, "SIGNUP|", 7) == 0) { // 회원가입
             // 요청 파싱 (예: "SIGNUP|아이디|비밀번호|닉네임")
             char *id = buffer + 7;
             char *pw = strchr(id, '|');
@@ -215,30 +202,15 @@ void *handle_tcp_client(void *arg) {
             
             handle_waiting_command(client_sock, token);
             client_response_loop(client_sock, token);           
-        } else if (strncmp(buffer, "RESULT|", 7) == 0) { // 결과 저장
-            // 예시: "RESULT|토큰값|WIN" 또는 "RESULT|토큰값|LOSS"
-            char *token = buffer + 7;
-            char *result = strchr(token, '|');
-            printf("result\n");
-            if (!result) {
-                send(client_sock, "ERROR", 5, 0);
-                continue;
-            }
-            *result++ = '\0';
-            if (get_user_info_by_token(token, user_id, sizeof(user_id), nickname, sizeof(nickname), &wins, &losses) == 0) {
-                // game_stats 테이블에 결과 반영 (예: WIN이면 wins+1)
-                int save_result = save_game_result(token, result);
-                if (save_result == 0) {
-                    // 성공
-                    send(client_sock, "RESULT_OK", 9, 0);
-                    // printf("Game result saved successfully for token: %s, result: %s\n", token, result);
-                } else {
-                    // 실패 (토큰 무효, DB 오류 등)
-                    send(client_sock, "RESULT_ERROR", 12, 0);
-                    // printf("Failed to save game result for token: %s, result: %s\n", token, result);
-                }
+        } else if (strncmp(buffer, "CHECK_NICKNAME|", 15) == 0) { // 닉네임 중복 검사
+            char *nickname = buffer + 15;
+            int is_duplicate = check_nickname_duplicate(nickname);
+            if (is_duplicate == 1) {
+                send(client_sock, "NICKNAME_TAKEN", 14, 0);
+            } else if (is_duplicate == 0) {
+                send(client_sock, "NICKNAME_AVAILABLE", 18, 0);
             } else {
-                send(client_sock, "INVALID_TOKEN", 13, 0);
+                send(client_sock, "ERROR", 5, 0);
             }
         } else {
             send(client_sock, "ERROR", 5, 0);

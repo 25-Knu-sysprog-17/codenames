@@ -1,6 +1,7 @@
 #include "session.h"
 #include "user_info.h"
 #include "user_report.h"
+#include "game_result.h"
 #include "room_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -147,8 +148,10 @@ void* client_response_loop(int client_sock, const char* token) {
             } else if (strncmp(line, "MATCHING_CANCEL|", 16) == 0) {
                 const char* received_token = line + 16;
                 if (strncmp(received_token, token, TOKEN_LEN) == 0) {
-                    cancel_waiting(client_sock, token);
+                    WaitResult res = cancel_waiting(client_sock, token);
                     send(client_sock, "CANCEL_OK\n", strlen("CANCEL_OK\n"), 0);
+                    if (res == WAIT_CANCELLED || WAIT_ERROR)
+                        loopEnd = true;
                     break;
                 } else {
                     send(client_sock, "CANCEL_OK\n", strlen("CANCEL_OK\n"), 0);
@@ -569,6 +572,15 @@ event_gameover:
     broadcast_to_all(session, end_msg);
 
     // 여기에서 DB에 게임 결과 저장 (game_result.c)
+    int result_save = 0;
+
+    for (int i = 0; i < MAX_ROOM_PLAYERS; ++i) {
+        if(session->init_info.players[i].team == winner_team) {
+            result_save = save_game_result_by_nickname(session->init_info.players[i].nickname, "WIN");  
+        } else {
+            result_save = save_game_result_by_nickname(session->init_info.players[i].nickname, "LOSS"); 
+        }
+    }
 
     // 세션 정리
     unregister_session(session);
