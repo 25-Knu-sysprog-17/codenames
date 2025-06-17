@@ -30,23 +30,12 @@ typedef struct {
     int isUsed;
 } GameCard;
 
-typedef enum {
-    REPORT_SUCCESS,
-    REPORT_ERROR,
-    REPORT_INVALID_TOKEN,
-    REPORT_USER_NOT_FOUND,
-    REPORT_SUSPENDED
-} ReportResult;
-
 static GameCard cards[MAX_CARDS];
-int redScore = 0;
-int blueScore = 0;
-Result result = RESULT_WIN;
-int winner_team = -1;
-static int turn_team = -1;
-static int phase = -1;
+static int redScore = 0;
+static int blueScore = 0;
+static int turn_team = 0;
+static int phase = 0;
 static int gameOver = 0;
-static int gameLoop = 1;
 static char hintWord[32] = "";
 static int hintCount = 0;
 
@@ -55,7 +44,6 @@ static char chat_log[CHAT_LOG_SIZE][128] = { "" };
 static int chat_count = 0;
 static int chat_scroll_offset = 0;
 static int report_selected_index = 0;
-static int report_completed = 0;
 
 static pthread_mutex_t chat_log_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int listener_alive = 0;
@@ -112,38 +100,6 @@ void listener_signal_handler(int sig) {
 
 static bool cards_initialized = 0;
 
-ReportResult send_report_request(const char *nickname) {
-    char request[256];
-    snprintf(request, sizeof(request), "REPORT|%s|%s", token, nickname);
-
-    if (SSL_write(ssl, request, strlen(request)) <= 0) {
-        perror("SSL_write");
-        return REPORT_ERROR;
-    }
-
-    char response[256] = {0};
-    int recv_len = SSL_read(ssl, response, sizeof(response)-1);
-    if (recv_len <= 0) {
-        perror("SSL_read");
-        return REPORT_ERROR;
-    }
-    response[recv_len] = '\0';
-
-    // 응답 파싱
-    if (strstr(response, "REPORT_OK")) {
-        if (strstr(response, "SUSPENDED")) {
-            return REPORT_SUSPENDED;
-        }
-        return REPORT_SUCCESS;
-    } else if (strstr(response, "INVALID_TOKEN")) {
-        return REPORT_INVALID_TOKEN;
-    } else if (strstr(response, "USER_NOT_FOUND")) {
-        return REPORT_USER_NOT_FOUND;
-    } else {
-        return REPORT_ERROR;
-    }
-}
-
 bool are_cards_valid() {
     for (int i = 0; i < MAX_CARDS; i++) {
         if (cards[i].name[0] == '\0') return false;
@@ -157,7 +113,7 @@ void* input_thread_func(void* arg) {
     wchar_t local_buf[MAX_INPUT_LEN] = { 0 };  // ✅ 초기화 한 번만
     int len = 0;
 
-    while (gameLoop) {
+    while (1) {
         if (get_wch(&wch) == ERR) continue;
 
         pthread_mutex_lock(&shared_input.lock);
@@ -166,38 +122,20 @@ void* input_thread_func(void* arg) {
         wcstombs(dbg, local_buf, sizeof(dbg) - 1);
         dbg[sizeof(dbg) - 1] = '\0';
 
-        // ✅ 방향키 처리: 신고 인덱스 선택 또는 채팅 스크롤 / 기타 방향키 무시
+        // ✅ 채팅 스크롤 조절
         if (wch == KEY_UP || wch == KEY_DOWN || wch == KEY_LEFT || wch == KEY_RIGHT) {
-            if (shared_input.mode == INPUT_REPORT) {
-                if (wch == KEY_UP && report_selected_index > 0) {
-                    report_selected_index--;
-                    set_debug_message(1, "신고 인덱스 ↑");
-                } else if (wch == KEY_DOWN && report_selected_index < 5) {
-                    report_selected_index++;
-                    set_debug_message(1, "신고 인덱스 ↓");
-                }
-                shared_input.needs_redraw = 1;
-            }
-            else if (shared_input.mode == INPUT_CHAT) {
-                pthread_mutex_unlock(&shared_input.lock);  // 🔓 UI 상태 보호 안함
-
-                pthread_mutex_lock(&chat_log_lock);
-                if (wch == KEY_UP && chat_scroll_offset + 1 < chat_count)
-                    chat_scroll_offset++;
-                else if (wch == KEY_DOWN && chat_scroll_offset > 0)
-                    chat_scroll_offset--;
-                pthread_mutex_unlock(&chat_log_lock);
-
-                pthread_mutex_lock(&shared_input.lock);
-                shared_input.needs_redraw = 1;
-                pthread_mutex_unlock(&shared_input.lock);
-
-                set_debug_message(1, "↑↓ 스크롤 동작");
-                continue;
-            }
-
-            // LEFT/RIGHT 등 기타 방향키는 아무 효과 없이 무시되도록 처리
             pthread_mutex_unlock(&shared_input.lock);
+            pthread_mutex_lock(&chat_log_lock);
+            if (wch == KEY_UP && chat_scroll_offset + 1 < chat_count)
+                chat_scroll_offset++;
+            else if (wch == KEY_DOWN && chat_scroll_offset > 0)
+                chat_scroll_offset--;
+            pthread_mutex_unlock(&chat_log_lock);
+
+            pthread_mutex_lock(&shared_input.lock);
+            shared_input.needs_redraw = 1;
+            pthread_mutex_unlock(&shared_input.lock);
+            set_debug_message(1, "↑↓ 스크롤 동작");
             continue;
         }
 
@@ -333,14 +271,6 @@ void draw_team_ui(int y, int x, int red, int blue) {
         mvprintw(y + 1 + i + 2, x + 2, "%s      신고", global_info.players[i].nickname);
         if (current_mode == INPUT_REPORT && report_selected_index == i)
             attroff(A_REVERSE);
-    }
-
-    if(report_completed == 1) {
-        mvprintw(11 , 4, "[신고 완료] %s 님을 신고했습니다.", global_info.players[report_selected_index].nickname);
-        report_completed = 0;
-    } else if (report_completed == -1) {
-        mvprintw(11 , 4, "신고 중 오류가 발생했습니다.\n");
-        report_completed = 0;
     }
 }
 
@@ -509,7 +439,6 @@ void* listener_thread(void* arg) {
         while ((newline = strchr(line_start, '\n')) != NULL) {
             *newline = '\0';
             char* line = line_start;
-            //set_debug_message(1, line);
 
             if (strlen(line) == 0) {
                 line_start = newline + 1;
@@ -570,7 +499,6 @@ void* listener_thread(void* arg) {
                     pthread_mutex_unlock(&shared_input.lock);
                 }
             } else if (strncmp(line, "CARD_UPDATE|", 12) == 0) {
-                set_debug_message(1, line);
                 char* ptr = line + 12;
                 char* idx_str = strtok(ptr, "|");
                 char* used_str = strtok(NULL, "|");
@@ -584,59 +512,36 @@ void* listener_thread(void* arg) {
                 shared_input.needs_redraw = 1;
                 pthread_mutex_unlock(&shared_input.lock);
             } else if (strncmp(line, "TURN_UPDATE|", 12) == 0) {
-                //set_debug_message(1, line);
+                //set_debug_message(0, line);
                 char* ptr = line + 12;
                 char* tok1 = strtok(ptr, "|");
                 char* tok2 = strtok(NULL, "|");
                 char* tok3 = strtok(NULL, "|");
                 char* tok4 = strtok(NULL, "|");
                 if (tok1 && tok2 && tok3 && tok4) {
-                    int new_turn_team = atoi(tok1);
-                    int new_phase = atoi(tok2);
-                    int new_redScore = atoi(tok3);
-                    int new_blueScore = atoi(tok4);
+                    turn_team = atoi(tok1);
+                    phase = atoi(tok2);
+                    redScore = atoi(tok3);
+                    blueScore = atoi(tok4);
 
-                    redScore = new_redScore;
-                    blueScore = new_blueScore;
-                    
-                    // 시스템 코드(점수만 바꾸는 경우 바로 널 리턴)
-                    if (new_turn_team == 2) {
-                        pthread_mutex_lock(&shared_input.lock);
-                        shared_input.needs_redraw = 1;
-                        pthread_mutex_unlock(&shared_input.lock);
+                    char sys_msg[64];
+                    snprintf(sys_msg, sizeof(sys_msg), "[%s팀의 턴입니다.]", turn_team == 0 ? "레드" : "블루");
+                    append_chat_log(sys_msg);
+
+                    int my_index = global_info.myPlayerIndex;
+                    int my_team = global_info.players[my_index].team;
+                    bool is_leader = global_info.players[my_index].is_leader;
+
+                    pthread_mutex_lock(&shared_input.lock);
+                    if (my_team == turn_team && is_leader && phase == 0) {
+                        shared_input.mode = INPUT_HINT;
+                    } else if (my_team == turn_team && !is_leader && phase == 1) {
+                        shared_input.mode = INPUT_ANSWER;
                     } else {
-                        int old_turn_team = turn_team;
-                        int old_phase = phase;
-                        // 상태 반영
-                        turn_team = new_turn_team;
-                        phase = new_phase;
-
-                        // ✅ 출력은 이전 턴 정보와 비교해 조건부 실행
-                        if (!(new_turn_team == old_turn_team && new_phase == old_phase)) {
-                            const char* team_str = (new_turn_team == 0) ? "레드" : "블루";
-                            const char* phase_str = (new_phase == 0) ? "팀장" : "팀원";
-                            char sys_msg[64];
-                            snprintf(sys_msg, sizeof(sys_msg), "[%s팀의 %s 턴입니다.]", team_str, phase_str);
-                            append_chat_log(sys_msg);
-                        }
-
-                        int my_index = global_info.myPlayerIndex;
-                        int my_team = global_info.players[my_index].team;
-                        bool is_leader = global_info.players[my_index].is_leader;
-
-                        pthread_mutex_lock(&shared_input.lock);
-                        if (my_team == turn_team && is_leader && phase == 0) {
-                            shared_input.mode = INPUT_HINT;
-                        } else if (my_team == turn_team && !is_leader && phase == 1) {
-                            shared_input.mode = INPUT_ANSWER;
-                        } else {
-                            shared_input.mode = NONE;
-                        }
-
-                        shared_input.needs_redraw = 1;
-                        pthread_mutex_unlock(&shared_input.lock);
+                        shared_input.mode = NONE;
                     }
-                    
+                    shared_input.needs_redraw = 1;
+                    pthread_mutex_unlock(&shared_input.lock);
                 }
             } else if (strncmp(line, "HINT|", 5) == 0) {
                 char* ptr = line + 5;
@@ -658,7 +563,7 @@ void* listener_thread(void* arg) {
                     pthread_mutex_unlock(&shared_input.lock);
                 }
             } else if (strncmp(line, "CHAT|", 5) == 0) {
-                set_debug_message(2, line);
+                //set_debug_message(2, line);
                 char* ptr = line + 5;
                 char* team_str = strtok(ptr, "|");
                 char* leader_str = strtok(NULL, "|");
@@ -717,59 +622,9 @@ void* listener_thread(void* arg) {
                         }
                     }
                 }
-            } else if (strncmp(line, "REPORT_OK|", 10) == 0) {
-                int count = 0;
-                char* count_str = line + 10;
-                char* suspend_ptr = strchr(count_str, '|');
-
-                if (suspend_ptr) {
-                    *suspend_ptr = '\0';
-                    count = atoi(count_str);
-
-                    if (strcmp(suspend_ptr + 1, "SUSPENDED") == 0) {
-                        // 정지된 경우 안내 메시지 출력
-                        char msg[160];
-                        snprintf(msg, sizeof(msg), "[신고 완료] 누적 %d회 - 해당 유저는 다음 게임부터 참여가 제한됩니다.", count);
-                        append_chat_log(msg);
-                    }
-                } else {
-                    // 일반 신고 성공
-                    count = atoi(count_str);
-                    char msg[128];
-                    snprintf(msg, sizeof(msg), "[신고 완료] 누적 신고 %d회", count);
-                    append_chat_log(msg);
-                }
-
-    
-                report_completed = 1;
-                pthread_mutex_lock(&shared_input.lock);
-                shared_input.needs_redraw = 1;
-                pthread_mutex_unlock(&shared_input.lock);
             } else if (strncmp(line, "GAME_OVER|", 10) == 0) {
-                winner_team = -1;
-                    
-                // 메시지에서 승리 팀 번호 파싱 // strtok으로 로직 변경할 것
-                sscanf(line, "GAME_OVER|%d", &winner_team);
-                //set_debug_message(0, line);
+                gameOver = 1; // 게임 오버 수신시 처리는 여기서 구현하세요
 
-                // 게임 종료 메시지 서버로 전송 (client_response_loop 탈출 유도)
-                send(sock, "GAME_QUIT\n", strlen("GAME_QUIT\n"), 0);
-
-                // 내 팀 정보 확인
-                int my_index = global_info.myPlayerIndex;
-                int team_color = global_info.players[my_index].team;
-
-                // 결과 결정 - 선언 중복 해결할 것
-                result = (team_color == winner_team) ? RESULT_WIN : RESULT_LOSE;
-
-                pthread_mutex_lock(&shared_input.lock);
-                gameOver = 1; // 디버그용 비활성화
-                shared_input.needs_redraw = 1;
-                pthread_mutex_unlock(&shared_input.lock);
-
-            } else if (strncmp(line, "REPORT_ERROR", 12) == 0) {
-                append_chat_log("[신고 실패] 요청을 처리할 수 없습니다.");
-                report_completed = -1;
                 pthread_mutex_lock(&shared_input.lock);
                 shared_input.needs_redraw = 1;
                 pthread_mutex_unlock(&shared_input.lock);
@@ -840,16 +695,9 @@ void screen_redraw() {
     } 
     shared_input.needs_redraw = 0;
     pthread_mutex_unlock(&shared_input.lock);
-    // 게임 종료 처리 - 화면 이동 필요
-    if (gameOver) {
-        gameLoop = 0;
-        endwin();
-        return;
-    }
-    
-    //erase(); 
-    clear(); // 디버깅
-    
+    erase(); 
+    //clear(); // 디버깅
+
     // 화면 크기 가져오기
     int term_y, term_x;
     getmaxyx(stdscr, term_y, term_x);
@@ -860,12 +708,21 @@ void screen_redraw() {
     char time_str[16];
     strftime(time_str, sizeof(time_str), "%H:%M:%S", local);
 
-    // mvprintw(1, term_x - 20, "⏰ %s", time_str);
+    mvprintw(1, term_x - 20, "⏰ %s", time_str);
 
     // 보드 위치 계산
     int board_offset_x = (term_x - (12 * BOARD_SIZE)) / 2;
     int board_offset_y = 2;
     int chat_y = board_offset_y + BOARD_SIZE * 4 + 2;
+
+    // 게임 종료 처리 - 화면 이동 필요
+    // if (gameOver) {
+    //     mvprintw(0, 2, "게임 종료! 레드팀 %d점, 블루팀 %d점", redScore, blueScore);
+    //     mvprintw(2, 4, redScore >= 9 ? "레드팀 승리!" : "블루팀 승리!");
+    //     refresh();
+    //     getch();
+    //     break;
+    // }
 
     // 현재 턴 팀과 역할 출력
     const char* team = (turn_team == 0) ? "레드팀" : "블루팀";
@@ -911,48 +768,6 @@ void screen_redraw() {
     //doupdate();
 }
 
-// 게임 상태 및 UI 초기화 함수
-void reset_game_state(void) {
-    redScore = 0;
-    blueScore = 0;
-    result = RESULT_WIN;
-    winner_team = -1;
-    turn_team = -1;
-    phase = -1;
-    gameOver = 0;
-    gameLoop = 1;
-    hintWord[0] = '\0';
-    hintCount = 0;
-    answer_text[0] = '\0';
-    report_selected_index = 0;
-    report_completed = 0;
-    chat_count = 0;
-    chat_scroll_offset = 0;
-    cards_initialized = false;
-
-    // 카드 배열 초기화
-    for (int i = 0; i < MAX_CARDS; i++) {
-        cards[i].name[0] = '\0';
-        cards[i].type = 0;
-        cards[i].isUsed = 0;
-    }
-
-    // 채팅 로그 초기화
-    for (int i = 0; i < CHAT_LOG_SIZE; i++) {
-        chat_log[i][0] = '\0';
-    }
-
-    // 입력 버퍼 초기화
-    pthread_mutex_lock(&shared_input.lock);
-    wmemset(shared_input.input_buf, 0, MAX_INPUT_LEN);
-    shared_input.ready = 0;
-    shared_input.mode = NONE;
-    shared_input.needs_redraw = 1;
-    shared_input.cursor_y = 0;
-    shared_input.cursor_x = 0;
-    pthread_mutex_unlock(&shared_input.lock);
-}
-
 SceneState codenames_screen(GameInitInfo info) {
     global_info = info;
 
@@ -965,8 +780,7 @@ SceneState codenames_screen(GameInitInfo info) {
     init_pair(2, COLOR_WHITE, COLOR_RED);
     init_pair(3, COLOR_WHITE, COLOR_BLUE);
     init_pair(4, COLOR_WHITE, COLOR_MAGENTA);
-    
-    reset_game_state();
+
     int sock = get_game_sock();
 
     pthread_t tid;
@@ -983,10 +797,12 @@ SceneState codenames_screen(GameInitInfo info) {
     
     time_t last_tick = 0;
 
-    while (gameLoop) {
-        /*if (!listener_alive) {
+    while (1) {
+
+
+        if (!listener_alive) {
             mvprintw(1, 2, "❌ listener_thread가 비정상 종료됨 (네트워크 문제?)");
-        }*/
+        }
 
         // ✅ 입력 처리: 입력이 준비되었는가?
         pthread_mutex_lock(&shared_input.lock);
@@ -1039,14 +855,22 @@ SceneState codenames_screen(GameInitInfo info) {
                     }
                     break;
                 case INPUT_REPORT:
-                    const char* nickname = global_info.players[report_selected_index].nickname;
+                    // 🔒 신고 대상 선택 조작 생략됨 (선택 불가 고정)
+                    // int ch = getch(); ... 등 생략
                     {
-                        char msg[256];
-                        snprintf(msg, sizeof(msg), "REPORT|%s|%s\n", token, nickname);
-                        send(sock, msg, strlen(msg), 0);
-                        set_debug_message(0, msg);
+                        // int ch = getch();
+                        // if (ch == KEY_UP && report_selected_index > 0) report_selected_index--;
+                        // else if (ch == KEY_DOWN && report_selected_index < 5) report_selected_index++;
+                        // else if (ch == 10) {
+                        //     char msg[128];
+                        //     snprintf(msg, sizeof(msg), "[신고 완료] %s 님을 신고했습니다.", global_info.players[report_selected_index].nickname);
+                        //     append_chat_log(msg);
+                        //     input_mode = INPUT_CHAT;
+                        // } else if (ch == 9) input_mode = INPUT_CHAT;
+                        // else if (ch == 1) input_mode = INPUT_HINT;
+                        // continue;
+                        //input_mode = NONE;
                     }
-                    shared_input.mode = INPUT_CHAT;
                     break;
                 default: break;
             }
@@ -1055,7 +879,7 @@ SceneState codenames_screen(GameInitInfo info) {
             pthread_mutex_unlock(&shared_input.lock);
         }
 
-        /*time_t now = time(NULL);
+        time_t now = time(NULL);
 
         if (now != last_tick) {
             last_tick = now;
@@ -1063,12 +887,11 @@ SceneState codenames_screen(GameInitInfo info) {
             pthread_mutex_lock(&shared_input.lock);
             shared_input.needs_redraw = 1;
             pthread_mutex_unlock(&shared_input.lock);
-        }*/
+        }
 
         screen_redraw();
     }
 
-    usleep(50000);
-    //endwin();
+    endwin();
     return SCENE_RESULT;
 }

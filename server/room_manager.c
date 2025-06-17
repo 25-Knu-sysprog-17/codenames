@@ -61,6 +61,10 @@ WaitResult handle_waiting_command(int client_sock, const char* token) {
         snprintf(reply, sizeof(reply), "WAIT_REPLY|%d\n", count_snapshot);
         for (int i = 0; i < waiting_count; ++i) {
             send(waiting_queue[i].sock, reply, strlen(reply), 0);
+            printf("↪️ WAIT_REPLY|%d sent to token=%s (sock=%d)\n",
+                count_snapshot,
+                waiting_queue[i].token,
+                waiting_queue[i].sock);
         }
 
         pthread_mutex_unlock(&queue_mutex);
@@ -108,9 +112,10 @@ void* client_response_loop(int client_sock, const char* token) {
     char buffer[RESPONSE_BUFFER];
     GameSession* session = NULL;
     int my_index = -1;
+    bool loopEnd = false;
 
     printf("%s- Game Session Started\n", token);
-    while (1) {
+    while (!loopEnd) {
         int len = recv(client_sock, buffer, sizeof(buffer) - 1, 0);
         if (len <= 0) {
             cancel_waiting(client_sock, token);
@@ -226,6 +231,9 @@ void* client_response_loop(int client_sock, const char* token) {
                     snprintf(response, sizeof(response), "REPORT_OK|%d\n", report_count);
                 }
                 send(client_sock, response, strlen(response), 0);
+            } else if (strcmp(line, "GAME_QUIT") == 0) {
+                printf("%s- Client exiting after GAME_OVER\n", token);
+                loopEnd = true;
             }
             line = strtok_r(NULL, "\n", &saveptr);
         }
@@ -559,6 +567,8 @@ event_gameover:
     char end_msg[64];
     snprintf(end_msg, sizeof(end_msg), "GAME_OVER|%d", winner_team);
     broadcast_to_all(session, end_msg);
+
+    // 여기에서 DB에 게임 결과 저장 (game_result.c)
 
     // 세션 정리
     unregister_session(session);

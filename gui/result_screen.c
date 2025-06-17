@@ -2,6 +2,10 @@
 #include "gui_utils.h"
 #include "gui_invalid_token.h"
 #include "codenames_screen.h"
+#include <wchar.h>
+#include <locale.h>
+#include <ncursesw/ncurses.h>
+#include <wctype.h>
 #include <ncurses.h>
 #include <string.h>
 #include <stdio.h>
@@ -64,7 +68,7 @@ SceneState send_game_result(int sock, const char *token, Result result) {
 
     // 받은 메시지 출력
     printf("Response from server: %s\n", buffer);
-    return SCENE_RESULT;
+    return SCENE_MAIN;
 }
 
 // 결과 그리기
@@ -72,61 +76,59 @@ void draw_result(int red_score, int blue_score, Result result, int winner_team) 
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
 
-    const char* msg;
+    setlocale(LC_ALL, "");  // 유니코드 출력 필수
+
+    const wchar_t* msg;
     switch (result) {
-        case RESULT_WIN: msg = "Y O U   W I N !"; break;
-        case RESULT_LOSE: msg = "Y O U   L O S E !"; break;
-        default: msg = ""; break;
+        case RESULT_WIN: msg = L"Y O U   W I N !"; break;
+        case RESULT_LOSE: msg = L"Y O U   L O S E !"; break;
+        default: msg = L""; break;
     }
 
     int y1 = max_y / 8;
-    int x1 = (max_x - strlen(msg)) / 2;
+    int x1 = (max_x - wcswidth(msg, wcslen(msg))) / 2;
     attron(COLOR_PAIR(1)); // 노란색
-    mvprintw(y1, x1, "%s", msg);
+    mvaddwstr(y1, x1, msg);
     attroff(COLOR_PAIR(1));
 
-    char red_str[32];
-    char blue_str[32];
-    snprintf(red_str, sizeof(red_str), "RED TEAM : %d", red_score);
-    snprintf(blue_str, sizeof(blue_str), "BLUE TEAM : %d", blue_score);
+    wchar_t red_str[64];
+    wchar_t blue_str[64];
+    swprintf(red_str, sizeof(red_str)/sizeof(wchar_t), L"RED TEAM : %d", red_score);
+    swprintf(blue_str, sizeof(blue_str)/sizeof(wchar_t), L"BLUE TEAM : %d", blue_score);
 
-    const char* result_msg = "";
-
-    int result_y = max_y/3;
+    const wchar_t* result_msg = L"";
+    int result_y = max_y / 3;
     int result_x = 0;
+
     if (winner_team == 0) {
-        result_msg = "🎉빨간 팀이 이겼습니다🎉";
-        result_x = (max_x - strlen(result_msg)) / 2 + 4;
+        result_msg = L"빨간 팀이 이겼습니다";
+        result_x = (max_x - wcswidth(result_msg, wcslen(result_msg))) / 2;
         attron(COLOR_PAIR(2)); // 빨간색
-        mvprintw(result_y, result_x, "%s", result_msg);
+        mvaddwstr(result_y, result_x, result_msg);
         attroff(COLOR_PAIR(2));
     } else if (winner_team == 1) {
-        result_msg = "🎉파란 팀이 이겼습니다🎉";
-        result_x = (max_x - strlen(result_msg)) / 2 + 4;
-        attron(COLOR_PAIR(3)); // 빨간색
-        mvprintw(result_y, result_x, "%s", result_msg);
+        result_msg = L"파란 팀이 이겼습니다";
+        result_x = (max_x - wcswidth(result_msg, wcslen(result_msg))) / 2;
+        attron(COLOR_PAIR(3)); // 파란색
+        mvaddwstr(result_y, result_x, result_msg);
         attroff(COLOR_PAIR(3));
     }
 
-    result_x = (max_x - strlen(result_msg)) / 2 + 6;
-    attron(COLOR_PAIR(1)); // 노란색
-    mvprintw(result_y, result_x, "%s", result_msg);
-    attroff(COLOR_PAIR(1));
-
     int y2 = max_y / 2;
-    int x2 = (max_x - strlen(red_str)) / 2;
+    int x2 = (max_x - wcswidth(red_str, wcslen(red_str))) / 2;
 
-    attron(COLOR_PAIR(2)); // 빨간색
-    mvprintw(y2, x2, "%s", red_str);
+    attron(COLOR_PAIR(2));
+    mvaddwstr(y2, x2, red_str);
     attroff(COLOR_PAIR(2));
-    attron(COLOR_PAIR(3)); // 파란색
-    mvprintw(y2+1, x2, "%s", blue_str);
+
+    attron(COLOR_PAIR(3));
+    mvaddwstr(y2 + 1, x2, blue_str);
     attroff(COLOR_PAIR(3));
 
-    char msg4[] = "Enter";
+    wchar_t msg4[] = L"Enter";
     int y3 = max_y / 4 * 3;
-    int x3 = (max_x - strlen(msg4)) / 2;
-    mvprintw(y3, x3, "%s", msg4);
+    int x3 = (max_x - wcswidth(msg4, wcslen(msg4))) / 2;
+    mvaddwstr(y3, x3, msg4);
 }
 
 // 결과 전체
@@ -184,6 +186,17 @@ int main() {
     return 0;
 }*/
 
+
+void debug_log(const char* msg) {
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
+
+    attron(COLOR_PAIR(1));  // 노란색 (또는 원하는 색상)
+    mvprintw(max_y - 2, 2, "DEBUG: %-*s", max_x - 4, msg); // 내용 덮어쓰기
+    attroff(COLOR_PAIR(1));
+    refresh();
+}
+
 SceneState result_function(int red_score, int blue_score, Result result, int winner_team) {
     initscr();
     //clear();
@@ -222,11 +235,18 @@ SceneState result_function(int red_score, int blue_score, Result result, int win
             refresh();
         }
         int ch = getch();
-        if (ch == 'q' || ch == 10 || ch == 13) break;
-        sleep(10000); // CPU 사용량 낮추기
+        if (ch != ERR) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "입력 감지: ch = %d", ch);  // ← ASCII 코드 출력
+            debug_log(msg);
+            if (ch == 'q' || ch == 10 || ch == 13) break;
+        }
+
+        
+        usleep(100 * 1000); // 0.1초
     }
 
     endwin();
-    scene_state = send_game_result(game_sock, token, result);
-    return scene_state;
+    //scene_state = send_game_result(game_sock, token, result);
+    return SCENE_MAIN;
 }
