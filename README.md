@@ -1,4 +1,4 @@
-
+<a id="readme-top"></a>
 # 코드네임즈(CODENAMES)
 
 ![Codenames Logo](images/logo.png)
@@ -6,19 +6,16 @@
 ## 목차 (Table of Contents)
 
 1. [프로젝트 소개 (About The Project)](#프로젝트-소개-about-the-project)
-2. [사용된 라이브러리/프로그램 (Built with)](#사용된-라이브러리프로그램-built-with)
-3. [환경 준비 (Prerequisites)](#환경-준비-prerequisites)
-4. [서버측 인증서 생성 (Server-side Certificate Creation)](#서버측-인증서-생성-server-side-certificate-creation)
-5. [클라이언트 인증서 준비 (Client Certificate Setup)](#클라이언트-인증서-준비-client-certificate-setup)
-6. [실행 방법 (How to Run)](#실행-방법-how-to-run)
-7. [플레이 방법 (How To Play)](#플레이-방법-how-to-play)
-8. [저자 (Author)](#저자-author)
+2. [환경 준비 (Prerequisites)](#환경-준비-prerequisites)
+3. [서버측 인증서 생성 (Server-side Certificate Creation)](#서버측-인증서-생성-server-side-certificate-creation)
+4. [클라이언트 인증서 준비 (Client Certificate Setup)](#클라이언트-인증서-준비-client-certificate-setup)
+5. [실행 방법 (How to Run)](#실행-방법-how-to-run)
+6. [플레이 방법 (How To Play)](#플레이-방법-how-to-play)
+7. [저자 (Author)](#저자-author)
 
 ## 프로젝트 소개 (About The Project)
 보드게임 CODENAMES를 온라인으로 플레이할 수 있도록 구현하였습니다. 팀장은 주어진 정보를 바탕으로 힌트를 주고, 팀원들은 힌트를 바탕으로 정답을 추론해 보세요.
 
-## 사용된 라이브러리/프로그램 (Built with)
-* [![mysql][mysql-shield]][MYSQL-url]
 
 ## 환경 준비 (Prerequisites)
 
@@ -146,7 +143,3 @@ make
 - **[한승준]**
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- MARKDOWN LINKS & IMAGES -->
-[mysql-shield]: https://img.shields.io/badge/MySQL-4479A1?style=flat&logo=mySQL&logoColor=Blue
-[MYSQL-url]: https://www.mysql.com/
