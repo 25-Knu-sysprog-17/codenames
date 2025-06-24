@@ -1,8 +1,7 @@
 
 # 코드네임즈(CODENAMES)
 
-
-![Codenames Logo](../images/logo.png)
+![Codenames Logo](images/logo.png)
 
 ## 목차 (Table of Contents)
 
@@ -108,7 +107,7 @@ make
 ### 회원가입/로그인 (Sign Up/Login)
 
 처음이라면 회원가입(sign in)을 통해 계정을 생성하고, 계정이 이미 있다면 로그인을 해주세요.</p>
-![login](../images/login.png)
+![login](images/login.png)
 
 ### 게임 시작 (Start Game)
 
@@ -135,7 +134,7 @@ make
 #### 신고 (Report)
 
 부적절한 플레이를 하는 플레이어가 있다면 Ctrl+A를 누르고 유저를 선택해 신고가 가능합니다.</p>
-![report](../images/report.png)
+![report](images/report.png)
 
 ### 데모 플레이 (Demo Play)
 
