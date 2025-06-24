@@ -1,7 +1,8 @@
 
 # 코드네임즈(CODENAMES)
 
-![Codenames Logo](images/logo.png)
+
+![Codenames Logo](../images/logo.png)
 
 ## 목차 (Table of Contents)
 
@@ -9,20 +10,9 @@
 2. [사용된 라이브러리/프로그램 (Built with)](#사용된-라이브러리프로그램-built-with)
 3. [환경 준비 (Prerequisites)](#환경-준비-prerequisites)
 4. [서버측 인증서 생성 (Server-side Certificate Creation)](#서버측-인증서-생성-server-side-certificate-creation)
-   1. [자체 CA 인증서 만들기 (Create CA Certificate)](#자체-ca-인증서-만들기-create-ca-certificate)
-   2. [서버 인증서 만들기 (Create Server Certificate)](#서버-인증서-만들기-create-server-certificate)
 5. [클라이언트 인증서 준비 (Client Certificate Setup)](#클라이언트-인증서-준비-client-certificate-setup)
 6. [실행 방법 (How to Run)](#실행-방법-how-to-run)
-   1. [서버 실행 (Server Execution)](#서버-실행-server-execution)
-   2. [클라이언트 실행 (Client Execution)](#클라이언트-실행-client-execution)
 7. [플레이 방법 (How To Play)](#플레이-방법-how-to-play)
-   1. [회원가입/로그인 (Sign Up/Login)](#회원가입로그인-sign-uplogin)
-   2. [게임 시작 (Start Game)](#게임-시작-start-game)
-   3. [게임 진행 (Game Progress)](#게임-진행-game-progress)
-      1. [게임의 흐름 (Game Flow)](#게임의-흐름-game-flow)
-      2. [역할 배정 (Role Assignment)](#역할-배정-role-assignment)
-   4. [신고 (Report)](#신고-report)
-   5. [데모 플레이 (Demo Play)](#데모-플레이-demo-play)
 8. [저자 (Author)](#저자-author)
 
 ## 프로젝트 소개 (About The Project)
@@ -118,7 +108,7 @@ make
 ### 회원가입/로그인 (Sign Up/Login)
 
 처음이라면 회원가입(sign in)을 통해 계정을 생성하고, 계정이 이미 있다면 로그인을 해주세요.</p>
-![login](images/login.png)
+![login](../images/login.png)
 
 ### 게임 시작 (Start Game)
 
@@ -145,7 +135,7 @@ make
 #### 신고 (Report)
 
 부적절한 플레이를 하는 플레이어가 있다면 Ctrl+A를 누르고 유저를 선택해 신고가 가능합니다.</p>
-![report](images/report.png)
+![report](../images/report.png)
 
 ### 데모 플레이 (Demo Play)
 
